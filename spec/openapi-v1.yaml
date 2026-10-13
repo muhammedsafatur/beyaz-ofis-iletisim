@@ -1,0 +1,1135 @@
+openapi: 3.0.3
+info:
+  title: Kurum İçi İletişim API
+  version: 1.0.0
+  description: |
+    MVP (Faz 1) API sözleşmesi. Doküman sürümü: kurum-ici-iletisim-spec-v0.5.md.
+    Yetki kontrolü her istekte sunucuda yapılır. İstemci yetkiye güvenmez.
+    Hata formatı: { error: { code, message } }.
+servers:
+  - url: https://api.example.internal/api/v1
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Organization
+  - name: Conversations
+  - name: Messages
+  - name: Tickets
+  - name: AccessRequests
+  - name: Admin
+
+paths:
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Giriş
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        '200':
+          description: Başarılı giriş
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Access token yenile, refresh token döner (rotation)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        '200':
+          description: Yeni token çifti
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Oturumu kapat
+      responses:
+        '204': { description: Kapatıldı }
+
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Kendi profilim
+      responses:
+        '200':
+          description: Profil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+    patch:
+      tags: [Users]
+      summary: Profil güncelle (ad, soyad, unvan, profil fotoğrafı, sessize alma dışındaki alanlar)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_title: { type: string, maxLength: 120 }
+                profile_picture_url: { type: string, format: uri, nullable: true }
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /users:
+    get:
+      tags: [Users]
+      summary: Kullanıcı ara (kişi listesi)
+      parameters:
+        - { name: company_id, in: query, schema: { type: integer } }
+        - { name: department_id, in: query, schema: { type: integer } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Kullanıcı listesi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/UserSummary' }
+                  next_cursor: { type: string, nullable: true }
+
+  /users/{userId}/mute-state:
+    parameters:
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+
+  /companies:
+    get:
+      tags: [Organization]
+      summary: Şirket listesi
+      responses:
+        '200':
+          description: Şirketler
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Company' }
+
+  /departments:
+    get:
+      tags: [Organization]
+      summary: Birim listesi
+      parameters:
+        - { name: company_id, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Birimler
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Department' }
+
+  /locations:
+    get:
+      tags: [Organization]
+      summary: Lokasyon listesi
+      responses:
+        '200':
+          description: Lokasyonlar
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Location' }
+
+  /conversations:
+    get:
+      tags: [Conversations]
+      summary: Konuşma listesi (son mesaj tarihine göre sıralı, okunmamış sayısı dahil)
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        '200':
+          description: Konuşmalar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ConversationSummary' }
+                  next_cursor: { type: string, nullable: true }
+    post:
+      tags: [Conversations]
+      summary: Konuşma oluştur (birebir, grup)
+      description: |
+        Birebir konuşmada canMessage kontrolü yapılır. Şirketler arası ise company_context_id
+        seçimi zorunludur ya da tek bağlantı otomatik seçilir. Grup oluşturma yetkisi kurum politikasıyla
+        belirlenir (açık karar, şimdilik herkes).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, member_ids]
+              properties:
+                type: { type: string, enum: [direct, group] }
+                name: { type: string, maxLength: 120, description: Yalnızca grup için }
+                member_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+                company_context_id: { type: integer, nullable: true }
+      responses:
+        '201':
+          description: Oluşturuldu (birebir ise mevcut konuşma döner)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Şirketler arası bağlam seçimi gerekli
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContextChoiceRequired' }
+
+  /conversations/{conversationId}:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    get:
+      tags: [Conversations]
+      summary: Konuşma detayı (yalnızca aktif üye)
+      responses:
+        '200':
+          description: Konuşma
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /conversations/{conversationId}/members:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    post:
+      tags: [Conversations]
+      summary: Gruba üye ekle (grup kurucusu ya da birim kanalında birim yöneticisi)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_ids]
+              properties:
+                user_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        '200': { description: Üyeler eklendi, sistem mesajı oluştu }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Kişi bu konuşmada zaten aktif
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /conversations/{conversationId}/members/{userId}:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [Conversations]
+      summary: Üyeyi çıkar (sistem mesajı oluşur, mesajlar silinmez)
+      responses:
+        '204': { description: Çıkarıldı }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /conversations/{conversationId}/read:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    post:
+      tags: [Conversations]
+      summary: Okundu olarak işaretle (last_read_at güncellenir)
+      responses:
+        '204': { description: İşaretlendi }
+
+  /conversations/{conversationId}/mute:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    patch:
+      tags: [Conversations]
+      summary: Sessize al / aç (yalnızca kendi üyeliğim)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_muted]
+              properties:
+                is_muted: { type: boolean }
+      responses:
+        '200': { description: Güncellendi }
+
+  /conversations/{conversationId}/messages:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    get:
+      tags: [Messages]
+      summary: Mesaj listesi (before_seq ile geriye, after_seq ile yeniden bağlanmada ileri doldurma)
+      parameters:
+        - { name: before_seq, in: query, schema: { type: integer, format: int64 } }
+        - { name: after_seq, in: query, schema: { type: integer, format: int64 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      description: before_seq ve after_seq birlikte kullanılamaz.
+      responses:
+        '200':
+          description: Mesajlar, seq'e göre sıralı
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+                  has_more: { type: boolean }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Messages]
+      summary: Mesaj gönder (idempotent)
+      description: Aynı client_message_id ile tekrar gelen istek, ilk mesajın sonucunu döner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_message_id, content]
+              properties:
+                client_message_id: { type: string, format: uuid }
+                content: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '201':
+          description: Kaydedildi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '200':
+          description: Daha önce kaydedilmiş (idempotent tekrar)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /messages/{messageId}:
+    parameters:
+      - { name: messageId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [Messages]
+      summary: Düzenle (yalnızca gönderen, gönderimden sonra 15 dk)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '200':
+          description: Düzenlendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Düzenleme penceresi kapandı ya da mesaj silinmiş
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    delete:
+      tags: [Messages]
+      summary: Sil (yalnızca gönderen, gönderimden sonra 15 dk). Alıcıda "mesaj silindi" görünür.
+      responses:
+        '204': { description: Silindi }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Silme penceresi kapandı
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /messages/can-send:
+    post:
+      tags: [Messages]
+      summary: Gönderme yetkisi ön kontrolü (yalnızca UX, kesin karar sunucuda)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_user_id]
+              properties:
+                target_user_id: { type: string, format: uuid }
+                company_context_id: { type: integer, nullable: true }
+      responses:
+        '200':
+          description: Sonuç
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed: { type: boolean }
+                  reason: { type: string, nullable: true, description: Kısa, kullanıcıya gösterilebilir neden }
+                  context_options:
+                    type: array
+                    items: { type: integer }
+                    description: Şirketler arası ise seçilebilecek bağlamlar
+
+  /tickets:
+    get:
+      tags: [Tickets]
+      summary: Ticket listesi
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema: { type: string, enum: [requester, approver] }
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected, withdrawn, expired] } }
+        - { name: cursor, in: query, schema: { type: string } }
+      description: |
+        approver: kullanıcının yönetici olduğu birimlere gelen ticketlar.
+        Sistem yöneticisi için approver rolü yalnızca birim yöneticisi olmayan hedefleri listeler.
+      responses:
+        '200':
+          description: Ticketlar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TicketSummary' }
+                  next_cursor: { type: string, nullable: true }
+    post:
+      tags: [Tickets]
+      summary: Ticket aç
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_department_id, title, body]
+              properties:
+                target_department_id: { type: integer }
+                title: { type: string, minLength: 3, maxLength: 160 }
+                body: { type: string, minLength: 10, maxLength: 8000 }
+      responses:
+        '201':
+          description: Açıldı
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /tickets/{ticketId}:
+    parameters:
+      - { $ref: '#/components/parameters/TicketId' }
+    get:
+      tags: [Tickets]
+      summary: Ticket detayı. Gövde yalnızca birim yöneticisine döner. Sistem yöneticisine gövde yerine null döner.
+      responses:
+        '200':
+          description: Ticket
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Tickets]
+      summary: Ticket düzenle (yalnızca talep eden, açıldıktan sonra 15 dk, karar verilmeden önce)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, minLength: 3, maxLength: 160 }
+                body: { type: string, minLength: 10, maxLength: 8000 }
+      responses:
+        '200':
+          description: Düzenlendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /tickets/{ticketId}/withdraw:
+    parameters:
+      - { $ref: '#/components/parameters/TicketId' }
+    post:
+      tags: [Tickets]
+      summary: Ticket'ı geri çek (yalnızca talep eden, karar verilmeden önce)
+      responses:
+        '200':
+          description: Geri çekildi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /tickets/{ticketId}/decision:
+    parameters:
+      - { $ref: '#/components/parameters/TicketId' }
+    post:
+      tags: [Tickets]
+      summary: Ticket kararı (birim yöneticisi ya da birim yöneticisi yoksa sistem yöneticisi)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Karar kaydedildi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '403':
+          description: Talep eden kendi ticket'ını onaylayamaz ya da yetkisiz
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /access-requests:
+    get:
+      tags: [AccessRequests]
+      summary: Erişim talepleri
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema: { type: string, enum: [requester, approver] }
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected, withdrawn, expired] } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Talepler. Approver görünümünde yalnızca meta veri döner.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AccessRequestSummary' }
+                  next_cursor: { type: string, nullable: true }
+    post:
+      tags: [AccessRequests]
+      summary: Erişim talebi oluştur
+      description: |
+        target_department_ids yalnızca konuşmadaki aktif üyelerin birimleriyle sınırlıdır.
+        Her hedef için ayrı karar kaydı oluşur. Talep sunucuda expires_at (varsayılan 72 saat) ile açılır.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id, reason, target_department_ids]
+              properties:
+                conversation_id: { type: string, format: uuid }
+                reason: { type: string, minLength: 20, maxLength: 1000 }
+                target_department_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: integer }
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Hedef birim konuşmada yok ya da gerekçe yetersiz
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /access-requests/{requestId}:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+    get:
+      tags: [AccessRequests]
+      summary: Talep detayı. Meta veri herkese, içerik yalnızca talep edene ve ilgili hedef kararına göre değil, ayrı endpoint'te döner.
+      responses:
+        '200':
+          description: Talep detayı (meta veri)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /access-requests/{requestId}/targets/{departmentId}/decision:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: departmentId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [AccessRequests]
+      summary: Hedef birim kararı (birim yöneticisi ya da yönetici yoksa sistem yöneticisi meta veriyle)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Karar kaydedildi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRequest' }
+        '403':
+          description: Talep eden kendi talebini onaylayamaz ya da yetkisiz
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /access-requests/{requestId}/withdraw:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+    post:
+      tags: [AccessRequests]
+      summary: Talebi geri çek (yalnızca talep eden, karar kapanmadan)
+      responses:
+        '200':
+          description: Geri çekildi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /access-requests/{requestId}/content:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+    get:
+      tags: [AccessRequests]
+      summary: Onaylı talepte içerik (yalnızca talep eden, access_expires_at süresince, her çağrı access_log'a yazılır)
+      responses:
+        '200':
+          description: Mesajlar, kopyalama kapalı
+          headers:
+            Cache-Control:
+              schema: { type: string, example: 'no-store' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+                  access_expires_at: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '410':
+          description: Erişim süresi doldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/users:
+    post:
+      tags: [Admin]
+      summary: Kullanıcı oluştur (sistem yöneticisi). Davet e-postası gönderilir, şifre kullanıcı tarafından belirlenir.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [first_name, last_name, email]
+              properties:
+                first_name: { type: string, maxLength: 80 }
+                last_name: { type: string, maxLength: 80 }
+                email: { type: string, format: email }
+                job_title: { type: string, maxLength: 120 }
+                department_ids:
+                  type: array
+                  items: { type: integer }
+                location_ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/users/{userId}:
+    parameters:
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [Admin]
+      summary: Kullanıcı güncelle (birim, lokasyon, unvan)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                job_title: { type: string, maxLength: 120 }
+                department_ids:
+                  type: array
+                  items: { type: integer }
+                location_ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{userId}/deactivate:
+    parameters:
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Admin]
+      summary: Pasifleştir. Tüm aktif konuşmalardan çıkarılır, oturumları kapanır, sistem mesajı oluşur.
+      responses:
+        '200':
+          description: Pasifleştirildi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{userId}/reassign:
+    parameters:
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Admin]
+      summary: Pasifleşen kişinin yöneticilik ve açık ticket'larını yeniden ata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_user_id]
+              properties:
+                to_user_id: { type: string, format: uuid }
+                department_ids:
+                  type: array
+                  items: { type: integer }
+                ticket_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        '200': { description: Yeniden atandı }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/departments/{departmentId}/managers:
+    parameters:
+      - { name: departmentId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Admin]
+      summary: Birim yöneticisi ata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string, format: uuid }
+      responses:
+        '201': { description: Atandı }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin]
+      summary: Birim yöneticiliğini kaldır (query ile user_id)
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Kaldırıldı }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/company-links:
+    post:
+      tags: [Admin]
+      summary: Şirketler arası bağlantı aç. Önce önizleme için dry_run kullanılabilir.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [company_a_id, company_b_id]
+              properties:
+                company_a_id: { type: integer }
+                company_b_id: { type: integer }
+                dry_run: { type: boolean, default: false, description: true ise yalnızca etkilenecek kullanıcıları döner }
+      responses:
+        '200':
+          description: Önizleme (dry_run)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  affected_users:
+                    type: array
+                    items: { $ref: '#/components/schemas/UserSummary' }
+        '201':
+          description: Bağlantı açıldı
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyLink' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/company-links/{linkId}/revoke:
+    parameters:
+      - { name: linkId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Admin]
+      summary: Bağlantıyı kapat (mevcut konuşmalar okunabilir kalır, yeni mesaj gönderilemez)
+      responses:
+        '200':
+          description: Kapatıldı
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyLink' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Kimlik doğrulanamadı
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Yetki yok
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Bulunamadı
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Durum çakışması (ör. kapalı talep, süresi dolmuş işlem)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: FORBIDDEN_NOT_MEMBER
+            message:
+              type: string
+              example: Bu konuşmanın üyesi değilsiniz.
+
+    AuthTokens:
+      type: object
+      required: [access_token, refresh_token, expires_in]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in: { type: integer, description: Saniye cinsinden }
+
+    User:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, format: email }
+        job_title: { type: string, nullable: true }
+        role: { type: string, enum: [employee, system_admin] }
+        department_ids:
+          type: array
+          items: { type: integer }
+        location_ids:
+          type: array
+          items: { type: integer }
+        is_active: { type: boolean }
+        profile_picture_url: { type: string, format: uri, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    UserSummary:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        first_name: { type: string }
+        last_name: { type: string }
+        job_title: { type: string, nullable: true }
+        is_active: { type: boolean }
+
+    Company:
+      type: object
+      properties:
+        company_id: { type: integer }
+        name: { type: string }
+
+    Department:
+      type: object
+      properties:
+        department_id: { type: integer }
+        company_id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+
+    Location:
+      type: object
+      properties:
+        location_id: { type: integer }
+        name: { type: string }
+        city: { type: string }
+        address: { type: string }
+
+    ConversationSummary:
+      type: object
+      properties:
+        conversation_id: { type: string, format: uuid }
+        type: { type: string, enum: [direct, group, department] }
+        name: { type: string, nullable: true }
+        last_message_at: { type: string, format: date-time, nullable: true }
+        unread_count: { type: integer }
+        is_muted: { type: boolean }
+
+    Conversation:
+      allOf:
+        - $ref: '#/components/schemas/ConversationSummary'
+        - type: object
+          properties:
+            department_id: { type: integer, nullable: true }
+            company_context_id: { type: integer, nullable: true }
+            members:
+              type: array
+              items:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/UserSummary' }
+                  joined_at: { type: string, format: date-time }
+                  left_at: { type: string, format: date-time, nullable: true }
+                  last_read_at: { type: string, format: date-time, nullable: true }
+            read_summary:
+              type: object
+              description: Birebirde karşı taraf okudu mu, grupta kaç kişi okudu
+              properties:
+                read_by_count: { type: integer }
+
+    ContextChoiceRequired:
+      type: object
+      required: [error, context_options]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: CONTEXT_CHOICE_REQUIRED }
+            message: { type: string }
+        context_options:
+          type: array
+          items: { type: integer }
+
+    Message:
+      type: object
+      properties:
+        message_id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        sender: { $ref: '#/components/schemas/UserSummary' }
+        client_message_id: { type: string, format: uuid }
+        seq: { type: integer, format: int64 }
+        content:
+          type: string
+          nullable: true
+          description: Silinmiş mesajda null döner
+        message_type: { type: string, enum: [text, system] }
+        sent_at: { type: string, format: date-time }
+        edited_at: { type: string, format: date-time, nullable: true }
+        deleted: { type: boolean }
+        edit_window_closes_at: { type: string, format: date-time, nullable: true, description: Yalnızca gönderene döner }
+
+    Ticket:
+      allOf:
+        - $ref: '#/components/schemas/TicketSummary'
+        - type: object
+          properties:
+            body:
+              type: string
+              nullable: true
+              description: Yalnızca birim yöneticisine döner, sistem yöneticisine null
+            edit_window_closes_at: { type: string, format: date-time, nullable: true }
+            decisions:
+              type: array
+              items: { $ref: '#/components/schemas/TicketDecision' }
+
+    TicketSummary:
+      type: object
+      properties:
+        ticket_id: { type: string, format: uuid }
+        requester: { $ref: '#/components/schemas/UserSummary' }
+        target_department_id: { type: integer }
+        title: { type: string }
+        status: { type: string, enum: [pending, approved, rejected, withdrawn, expired] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        closed_at: { type: string, format: date-time, nullable: true }
+
+    TicketDecision:
+      type: object
+      properties:
+        decided_by: { $ref: '#/components/schemas/UserSummary' }
+        decision: { type: string, enum: [approved, rejected] }
+        note: { type: string, nullable: true }
+        decided_at: { type: string, format: date-time }
+
+    AccessRequest:
+      allOf:
+        - $ref: '#/components/schemas/AccessRequestSummary'
+        - type: object
+          properties:
+            reason: { type: string }
+            targets:
+              type: array
+              items: { $ref: '#/components/schemas/AccessRequestTarget' }
+            access_expires_at: { type: string, format: date-time, nullable: true }
+
+    AccessRequestSummary:
+      type: object
+      properties:
+        request_id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        conversation_name: { type: string, nullable: true }
+        requester: { $ref: '#/components/schemas/UserSummary' }
+        status: { type: string, enum: [pending, approved, rejected, withdrawn, expired] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        meta:
+          type: object
+          description: Onaylayanın gördüğü meta veri
+          properties:
+            member_count: { type: integer }
+            message_count: { type: integer }
+            first_message_at: { type: string, format: date-time, nullable: true }
+            last_message_at: { type: string, format: date-time, nullable: true }
+
+    AccessRequestTarget:
+      type: object
+      properties:
+        department_id: { type: integer }
+        status: { type: string, enum: [pending, approved, rejected, expired] }
+        decided_by: { $ref: '#/components/schemas/UserSummary' }
+        decision_basis: { type: string, enum: [content, meta], description: Birim yöneticisi içerikle, sistem yöneticisi meta veriyle karar verir }
+        decided_at: { type: string, format: date-time, nullable: true }
+
+    CompanyLink:
+      type: object
+      properties:
+        link_id: { type: integer }
+        company_a_id: { type: integer }
+        company_b_id: { type: integer }
+        created_by: { $ref: '#/components/schemas/UserSummary' }
+        created_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time, nullable: true }
