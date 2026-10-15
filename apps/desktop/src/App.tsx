@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
 import {
   ApiRequestError,
+  connectRealtime,
   createApiClient,
   createMemoryTokenStore,
   SyncEngine,
+  type AuditEntry,
   type ConversationSummary,
   type LocalMessage,
   type UserSummary,
@@ -18,6 +20,14 @@ const POLL_MS = 3000;
 const tokens = createMemoryTokenStore();
 const api = createApiClient({ baseUrl: API_URL, tokens });
 const engine = new SyncEngine(api);
+let realtime: { close(): void } | null = null;
+
+// Gerçek zamanlı kanal adresi (ws/wss). Vite proxy'si ws isteklerini de API'ye iletir.
+function realtimeUrl(): string {
+  if (/^https?:\/\//.test(API_URL)) return API_URL.replace(/^http/, "ws").replace(/\/$/, "") + "/ws";
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${scheme}://${window.location.host}${API_URL}/ws`;
+}
 
 function useSnapshot() {
   return useSyncExternalStore(
@@ -87,14 +97,16 @@ function Sidebar({
   selected,
   onSelect,
   onLogout,
+  onAudit,
   me,
 }: {
+  onAudit: () => void;
   conversations: ConversationSummary[];
   names: Record<string, string>;
   selected: string | null;
   onSelect: (id: string) => void;
   onLogout: () => void;
-  me: UserSummary;
+  me: UserSummary & { role?: string };
 }) {
   return (
     <aside style={styles.sidebar} data-testid="sidebar">
@@ -102,9 +114,16 @@ function Sidebar({
         <strong>
           {me.first_name} {me.last_name}
         </strong>
-        <button data-testid="logout" onClick={onLogout} style={styles.linkButton}>
-          Çıkış
-        </button>
+        <span>
+          {me.role === "system_admin" && (
+            <button data-testid="audit-open" onClick={onAudit} style={styles.linkButton}>
+              Denetim
+            </button>
+          )}
+          <button data-testid="logout" onClick={onLogout} style={styles.linkButton}>
+            Çıkış
+          </button>
+        </span>
       </div>
       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
         {conversations.map((c) => {
@@ -144,6 +163,7 @@ function MessageView({
   hasOlder,
   onLoadOlder,
   onSend,
+  onAttach,
 }: {
   me: UserSummary;
   id: string;
@@ -152,8 +172,10 @@ function MessageView({
   hasOlder: boolean;
   onLoadOlder: () => void;
   onSend: (text: string) => void;
+  onAttach: (file: File) => void;
 }) {
   const [text, setText] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -192,6 +214,15 @@ function MessageView({
               <div style={{ ...styles.bubble, background: mine ? "#DBEAFE" : colors.surface }}>
                 {!mine && <div style={styles.sender}>{m.sender ? `${m.sender.first_name} ${m.sender.last_name}` : ""}</div>}
                 <div>{m.deleted ? <em style={{ color: colors.textMuted }}>Mesaj silindi</em> : m.content}</div>
+                {m.attachment && !m.deleted && (
+                  <button
+                    data-testid="attachment-link"
+                    onClick={() => void api.downloadUrl(m.attachment!.attachment_id).then((u) => window.open(u, "_blank"))}
+                    style={{ ...styles.linkButton, padding: 0, marginTop: 4 }}
+                  >
+                    📎 {m.attachment.file_name} ({Math.max(1, Math.round(m.attachment.size_bytes / 1024))} KB)
+                  </button>
+                )}
                 <div style={styles.meta}>
                   {m.edited_at && !m.deleted ? "düzenlendi · " : ""}
                   {time(m.sent_at)}
@@ -214,10 +245,56 @@ function MessageView({
           style={{ ...styles.input, flex: 1 }}
           maxLength={4000}
         />
+        <input
+          ref={fileRef}
+          data-testid="file-input"
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) onAttach(f);
+          }}
+        />
+        <button type="button" data-testid="attach" onClick={() => fileRef.current?.click()} style={styles.linkButton}>
+          Ek
+        </button>
         <button data-testid="send" type="submit" style={styles.primary} disabled={!text.trim()}>
           Gönder
         </button>
       </form>
+    </section>
+  );
+}
+
+function AuditPanel({ onClose }: { onClose: () => void }) {
+  const [items, setItems] = useState<AuditEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .auditLog({ limit: 50 })
+      .then((p) => setItems(p.items))
+      .catch((err) => setError(errorText(err)));
+  }, []);
+  return (
+    <section style={styles.main} data-testid="audit-panel">
+      <header style={{ ...styles.header, display: "flex", justifyContent: "space-between" }}>
+        <span>Denetim kaydı</span>
+        <button onClick={onClose} style={styles.linkButton}>
+          Kapat
+        </button>
+      </header>
+      <div style={{ overflowY: "auto", padding: spacing.md, display: "grid", gap: spacing.xs }}>
+        {error && <p style={{ color: "#B91C1C" }}>{error}</p>}
+        {items?.map((e) => (
+          <div key={e.audit_id} data-testid="audit-row" style={{ fontSize: 13, borderBottom: "1px solid #E2E8F0", paddingBottom: 4 }}>
+            <strong>{e.actor ? `${e.actor.first_name} ${e.actor.last_name}` : "Sistem"}</strong> · {e.entity_type} · {e.action} ·{" "}
+            <span style={{ color: colors.textMuted }}>{new Date(e.created_at).toLocaleString("tr-TR")}</span>
+          </div>
+        ))}
+        {items && items.length === 0 && <p style={{ color: colors.textMuted }}>Kayıt yok.</p>}
+      </div>
     </section>
   );
 }
@@ -227,6 +304,7 @@ export default function App() {
   const [me, setMe] = useState<UserSummary | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [auditOpen, setAuditOpen] = useState(false);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
 
@@ -242,10 +320,13 @@ export default function App() {
     if (!me) return;
     for (const c of snapshot.conversations) {
       if (c.type !== "direct" || names[c.conversation_id]) continue;
-      void api.getConversation(c.conversation_id).then((detail) => {
-        const other = detail.members.find((m) => m.user.user_id !== me.user_id);
-        if (other) setNames((n) => ({ ...n, [c.conversation_id]: `${other.user.first_name} ${other.user.last_name}` }));
-      });
+      void api
+        .getConversation(c.conversation_id)
+        .then((detail) => {
+          const other = detail.members.find((m) => m.user.user_id !== me.user_id);
+          if (other) setNames((n) => ({ ...n, [c.conversation_id]: `${other.user.first_name} ${other.user.last_name}` }));
+        })
+        .catch(() => undefined);
     }
   }, [snapshot.conversations, me, names]);
 
@@ -255,14 +336,34 @@ export default function App() {
     setMe(user);
     await engine.refreshConversations(true);
     engine.start(() => (selectedRef.current ? [selectedRef.current] : []), POLL_MS);
+    // Gerçek zamanlı olay gelince hemen senkronize et; yoklama yedek olarak sürer.
+    realtime?.close();
+    realtime = connectRealtime({
+      url: realtimeUrl(),
+      getToken: async () => (await tokens.load())?.access_token ?? null,
+      onEvent: (e) => {
+        if (e.type === "conversation.changed") void engine.tick(selectedRef.current ? [selectedRef.current] : []);
+      },
+    });
   }
 
   async function logout() {
-    engine.stop();
+    realtime?.close();
+    realtime = null;
+    engine.reset();
     await api.auth.logout();
     setMe(null);
     setSelected(null);
     setNames({});
+    setAuditOpen(false);
+  }
+
+  // Dosya ekiyle mesaj: dosya yüklenir, bağlı mesaj gönderilir.
+  async function attach(file: File) {
+    if (!selected) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const meta = await api.uploadAttachment(selected, { fileName: file.name, contentType: file.type, bytes });
+    await engine.send(selected, `Dosya: ${file.name}`, me, meta.attachment_id).catch(() => undefined);
   }
 
   async function select(id: string) {
@@ -292,9 +393,12 @@ export default function App() {
         selected={selected}
         onSelect={select}
         onLogout={logout}
+        onAudit={() => setAuditOpen(true)}
         me={me}
       />
-      {selected && view?.loaded ? (
+      {auditOpen ? (
+        <AuditPanel onClose={() => setAuditOpen(false)} />
+      ) : selected && view?.loaded ? (
         <MessageView
           me={me}
           id={selected}
@@ -303,6 +407,7 @@ export default function App() {
           hasOlder={view.hasOlder}
           onLoadOlder={() => void engine.loadOlder(selected)}
           onSend={(t) => void engine.send(selected, t, me).catch(() => undefined)}
+          onAttach={(f) => void attach(f).catch(() => undefined)}
         />
       ) : (
         <section style={styles.main}>

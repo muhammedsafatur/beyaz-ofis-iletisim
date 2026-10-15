@@ -5,6 +5,7 @@ import * as SecureStore from "expo-secure-store";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
 import {
   ApiRequestError,
+  connectRealtime,
   createApiClient,
   SyncEngine,
   type ConversationSummary,
@@ -18,6 +19,26 @@ import {
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api/v1";
 const POLL_MS = 3000;
 const TOKEN_KEY = "beyaz-ofis.tokens";
+// Gerçek zamanlı kanal adresi: API adresinin ws biçimi.
+const REALTIME_URL = API_URL.replace(/^http/, "ws") + "/ws";
+let realtime: { close(): void } | null = null;
+
+function startRealtime() {
+  realtime?.close();
+  realtime = connectRealtime({
+    url: REALTIME_URL,
+    getToken: async () => (await tokens.load())?.access_token ?? null,
+    onEvent: (e) => {
+      if (e.type === "conversation.changed") void engine.tick(currentOpen());
+    },
+  });
+}
+
+// Açık konuşma kimliği (yalnızca bildirim için); ekran durumuyla eşlenir.
+let openId: string | null = null;
+function currentOpen(): string[] {
+  return openId ? [openId] : [];
+}
 
 // Belirteçler cihazın güvenli deposunda (iOS Keychain, Android Keystore). Düz depolama kullanılmaz (§10).
 const tokens: TokenStore = {
@@ -236,7 +257,8 @@ export default function App() {
         const user = await api.me();
         setMe(user);
         await engine.refreshConversations(true);
-        engine.start(() => (selected ? [selected] : []), POLL_MS);
+        engine.start(currentOpen, POLL_MS);
+        startRealtime();
       } catch {
         await tokens.clear();
       }
@@ -250,10 +272,13 @@ export default function App() {
     if (!me) return;
     for (const c of snapshot.conversations) {
       if (c.type !== "direct" || names[c.conversation_id]) continue;
-      void api.getConversation(c.conversation_id).then((detail) => {
-        const other = detail.members.find((m) => m.user.user_id !== me.user_id);
-        if (other) setNames((n) => ({ ...n, [c.conversation_id]: `${other.user.first_name} ${other.user.last_name}` }));
-      });
+      void api
+        .getConversation(c.conversation_id)
+        .then((detail) => {
+          const other = detail.members.find((m) => m.user.user_id !== me.user_id);
+          if (other) setNames((n) => ({ ...n, [c.conversation_id]: `${other.user.first_name} ${other.user.last_name}` }));
+        })
+        .catch(() => undefined);
     }
   }, [snapshot.conversations, me, names]);
 
@@ -262,16 +287,20 @@ export default function App() {
     const user = await api.me();
     setMe(user);
     await engine.refreshConversations(true);
-    engine.start(() => (selected ? [selected] : []), POLL_MS);
+    engine.start(currentOpen, POLL_MS);
+    startRealtime();
   }
 
   async function logout() {
-    engine.stop();
+    realtime?.close();
+    realtime = null;
+    engine.reset();
     await api.auth.logout();
     setMe(null);
     setSelected(null);
   }
 
+  openId = selected;
   if (!me) {
     return (
       <SafeAreaView style={styles.safe}>

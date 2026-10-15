@@ -54,6 +54,8 @@ export interface Message {
   // K2: yalnızca gönderenin kendi mesajlarında dolu
   read_count: number | null;
   read_by_peer: boolean | null;
+  // Faz 2: bağlı dosya eki
+  attachment: AttachmentMeta | null;
 }
 
 export interface MessagePage {
@@ -63,5 +65,35 @@ export interface MessagePage {
 
 export interface ConversationPage {
   items: ConversationSummary[];
+  next_cursor: string | null;
+}
+
+export interface AttachmentMeta {
+  attachment_id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+}
+
+export interface TicketComment {
+  comment_id: number;
+  author: UserSummary | null;
+  body: string;
+  created_at: string;
+}
+
+export interface AuditEntry {
+  audit_id: number;
+  actor: UserSummary | null;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AuditPage {
+  items: AuditEntry[];
   next_cursor: string | null;
 }

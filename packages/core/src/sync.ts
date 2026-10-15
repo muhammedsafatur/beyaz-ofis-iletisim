@@ -161,7 +161,7 @@ export class SyncEngine {
   }
 
   // Gönderim: iyimser ekleme. Sunucu yanıtı aynı client_message_id ile kaydı değiştirir (idempotent).
-  async send(id: string, content: string, sender: LocalMessage["sender"] = null): Promise<void> {
+  async send(id: string, content: string, sender: LocalMessage["sender"] = null, attachmentId?: string): Promise<void> {
     const clientId = this.newId();
     const pendingMsg: LocalMessage = {
       message_id: `local:${clientId}`,
@@ -178,12 +178,13 @@ export class SyncEngine {
       edit_window_closes_at: null,
       read_count: null,
       read_by_peer: null,
+      attachment: null,
       pending: "sending",
     };
     const view = this.snapshot.views[id] ?? emptyView();
     this.setView(id, { messages: [...view.messages, pendingMsg].sort(bySeq) });
     try {
-      const saved = await this.api.sendMessage(id, clientId, content);
+      const saved = await this.api.sendMessage(id, clientId, content, attachmentId);
       const current = this.snapshot.views[id] ?? emptyView();
       const rest = current.messages.filter((m) => m.client_message_id !== clientId && m.message_id !== saved.message_id);
       this.setView(id, {
@@ -222,5 +223,12 @@ export class SyncEngine {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  // Çıkışta önceki kullanıcının listesi ve mesajları temizlenir.
+  reset(): void {
+    this.stop();
+    this.ticks = 0;
+    this.set({ conversations: [], views: {}, updatedAfter: null, lastError: null });
   }
 }

@@ -9,6 +9,6 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     // Geliştirmede API ile aynı kökenden çalışmak için (CORS gerekmez).
-    proxy: { "/api": { target: "http://127.0.0.1:3000", changeOrigin: true } },
+    proxy: { "/api": { target: "http://127.0.0.1:3000", changeOrigin: true, ws: true } },
   },
 });

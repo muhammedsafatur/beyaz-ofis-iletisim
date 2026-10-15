@@ -27,7 +27,7 @@ async function api(method, path, token, body) {
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
 const page = await browser.newPage({ viewport: { width: 1200, height: 760 } });
 const pageErrors = [];
-page.on("pageerror", (e) => pageErrors.push(e.message));
+page.on("pageerror", (e) => pageErrors.push(`${e.message} ${e.stack ?? ""}`.slice(0, 400)));
 
 try {
   await page.goto(APP, { waitUntil: "networkidle" });
@@ -107,10 +107,33 @@ try {
   check("birebir konuşma mesajları yüklenir", await page.getByText("Akşam çıkıyor musun?").isVisible());
   await page.screenshot({ path: `${SHOTS}/desktop-3-direct.png` });
 
+  // Dosya eki: yüklenir, mesaja bağlanır, indirme bağlantısı görünür (Faz 2)
+  await page.setInputFiles('[data-testid="file-input"]', {
+    name: "not.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("merhaba dosya"),
+  });
+  await page.getByTestId("attachment-link").first().waitFor({ timeout: 15000 });
+  const linkText = await page.getByTestId("attachment-link").first().textContent();
+  check("dosya eki mesaja bağlanır ve görünür", linkText?.includes("not.txt") === true, linkText?.trim());
+
   // Çıkış
   await page.getByTestId("logout").click();
   await page.getByTestId("login-form").waitFor({ timeout: 10000 });
   check("çıkış sonrası giriş ekranına dönülür", await page.getByTestId("login-form").isVisible());
+
+  // Sistem yöneticisi: denetim kaydı ekranı (Faz 2)
+  await page.getByTestId("email").fill("admin@demo.test");
+  await page.getByTestId("password").fill("demo-parola-123");
+  await page.getByTestId("login-submit").click();
+  await page.getByTestId("audit-open").waitFor({ timeout: 10000 });
+  await page.getByTestId("audit-open").click();
+  await page.getByTestId("audit-panel").waitFor({ timeout: 10000 });
+  await page.getByTestId("audit-row").first().waitFor({ timeout: 10000 });
+  const rows = await page.getByTestId("audit-row").count();
+  check("denetim kaydı ekranı kayıtları listeler", rows > 0, `${rows} kayıt`);
+  await page.getByTestId("logout").click();
+  await page.getByTestId("login-form").waitFor({ timeout: 10000 });
 } catch (err) {
   check("beklenmeyen hata", false, err.message);
   await page.screenshot({ path: `${SHOTS}/desktop-error.png` }).catch(() => undefined);
