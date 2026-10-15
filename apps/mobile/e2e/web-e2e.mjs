@@ -84,6 +84,23 @@ await popup.close().catch(() => undefined);
 // İş ekranı: İş düğmesi konuşma listesindedir; sohbetten listeye dönülür
 await page.getByTestId("back").click();
 await page.getByTestId("conversation-item").first().waitFor({ timeout: 10000 });
+
+// Gerçek zamanlı anma: Ayşe, Ali'yi grupta anar; açık uygulamada banner görünür, dokununca konuşma açılır
+const aliMe = await api("GET", "/users/me", aliLogin.body.access_token);
+const realtimeText = `Ali bunu gorur musun ${Date.now()}`;
+const liveMention = await api("POST", `/conversations/${groupId}/messages`, ayseLogin.body.access_token, {
+  client_message_id: crypto.randomUUID(),
+  content: realtimeText,
+  mentions: [aliMe.body.user_id],
+});
+check("Ayşe Ali'yi grupta anar (sunucu kabul eder)", liveMention.status === 201);
+await page.getByTestId("mention-banner").waitFor({ timeout: 15000 });
+check("mobil web: gerçek zamanlı anma banner'ı görünür", true);
+await page.getByTestId("mention-banner").click();
+await page.getByTestId("composer").waitFor({ timeout: 10000 });
+check("banner'a dokunulunca anılan konuşma açılır", true);
+await page.getByTestId("back").click();
+await page.getByTestId("conversation-item").first().waitFor({ timeout: 10000 });
 await page.getByTestId("work-open").click();
 await page.getByTestId("work-tab-ticket").waitFor({ timeout: 10000 });
 await page.locator('[data-testid="ticket-dept"]', { hasText: "İnsan Kaynakları" }).click();
