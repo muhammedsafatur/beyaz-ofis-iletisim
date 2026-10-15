@@ -5,7 +5,13 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "beyazofis",
-    "platforms": ["ios", "android", "web"],
-    "userInterfaceStyle": "automatic"
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "android": {
+      "package": "com.beyazofis.mobile"
+    }
   }
 }

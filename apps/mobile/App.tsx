@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BackHandler, FlatList, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { BackHandler, FlatList, KeyboardAvoidingView, Linking, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
 import {
   ApiRequestError,
   applyMention,
+  base64ToBytes,
   connectRealtime,
   createApiClient,
   mentionSuggestions,
@@ -196,6 +199,12 @@ function ConversationList({
   );
 }
 
+// Ek dosyanın baytları: web'de tarayıcı blob'u, native'de dosya sisteminden base64.
+async function fileBytes(uri: string): Promise<Uint8Array> {
+  if (Platform.OS === "web") return new Uint8Array(await (await fetch(uri)).arrayBuffer());
+  return base64ToBytes(await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 }));
+}
+
 function receipt(m: LocalMessage): string | null {
   if (m.read_by_peer === true) return "Okundu";
   if (typeof m.read_count === "number") return m.read_count > 0 ? `${m.read_count} kişi okudu` : "İletildi";
@@ -206,6 +215,7 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
   const snapshot = useSnapshot();
   const view = snapshot.views[id];
   const [text, setText] = useState("");
+  const [attachError, setAttachError] = useState<string | null>(null);
   const [members, setMembers] = useState<UserSummary[]>([]);
   const [picked, setPicked] = useState<UserSummary[]>([]);
   const listRef = useRef<ScrollView>(null);
@@ -243,6 +253,31 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
   function pick(u: UserSummary) {
     setText((t) => applyMention(t, u));
     setPicked((p) => (p.some((x) => x.user_id === u.user_id) ? p : [...p, u]));
+  }
+
+  // Ek seçilir, yüklenir ve bağlı bir mesaj olarak gönderilir (masaüstüyle aynı akış).
+  async function attach() {
+    setAttachError(null);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf", "text/plain"], copyToCacheDirectory: true });
+      const file = picked.assets?.[0];
+      if (picked.canceled || !file) return;
+      const bytes = await fileBytes(file.uri);
+      const meta = await api.uploadAttachment(id, { fileName: file.name, contentType: file.mimeType ?? "application/octet-stream", bytes });
+      await engine.send(id, `Dosya: ${file.name}`, me, meta.attachment_id);
+    } catch (err) {
+      setAttachError(errorText(err));
+    }
+  }
+
+  // Ek indirme bağlantısı (imzalı, kısa ömürlü) tarayıcıda açılır.
+  async function openAttachment(attachmentId: string) {
+    setAttachError(null);
+    try {
+      await Linking.openURL(await api.downloadUrl(attachmentId));
+    } catch (err) {
+      setAttachError(errorText(err));
+    }
   }
 
   function send() {
@@ -291,6 +326,11 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
               <View style={[styles.bubble, { backgroundColor: mentioned ? "#FEF9C3" : mine ? "#DBEAFE" : colors.surface }]}>
                 {!mine && m.sender ? <Text style={styles.sender}>{`${m.sender.first_name} ${m.sender.last_name}`}</Text> : null}
                 <Text style={m.deleted ? styles.deleted : undefined}>{m.deleted ? "Mesaj silindi" : m.content}</Text>
+                {m.attachment && !m.deleted ? (
+                  <Pressable testID="attachment-link" onPress={() => void openAttachment(m.attachment!.attachment_id)}>
+                    <Text style={styles.link}>{`📎 ${m.attachment.file_name} (${Math.max(1, Math.round(m.attachment.size_bytes / 1024))} KB)`}</Text>
+                  </Pressable>
+                ) : null}
                 <Text style={styles.meta}>{meta}</Text>
               </View>
             </View>
@@ -306,7 +346,11 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
           ))}
         </ScrollView>
       ) : null}
+      {attachError ? <Text style={styles.error}>{attachError}</Text> : null}
       <View style={styles.composer}>
+        <Pressable testID="attach" onPress={() => void attach()} style={styles.attachButton}>
+          <Text style={styles.link}>Ek</Text>
+        </Pressable>
         <TextInput testID="composer" style={[styles.input, styles.flex]} placeholder="Mesaj yazın (@ ile anın)" value={text} onChangeText={setText} maxLength={4000} />
         <Pressable testID="send" onPress={send} disabled={!text.trim()} style={styles.primary}>
           <Text style={styles.primaryText}>Gönder</Text>
@@ -707,6 +751,7 @@ const styles = StyleSheet.create({
   meta: { fontSize: 11, color: colors.textMuted },
   system: { textAlign: "center", color: colors.textMuted, fontSize: 12 },
   composer: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
+  attachButton: { justifyContent: "center", paddingHorizontal: spacing.xs },
   suggestBar: { flexGrow: 0, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
   suggestContent: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, gap: spacing.sm, alignItems: "center" },
   suggestItem: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.surface },

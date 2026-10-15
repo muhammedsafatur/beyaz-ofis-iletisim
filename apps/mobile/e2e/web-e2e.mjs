@@ -66,6 +66,21 @@ const msgs = (await api("GET", `/conversations/${groupId}/messages`, aliLogin.bo
 const sent = msgs.find((m) => m.content?.endsWith(anma));
 check("anma sunucuda kayıtlı (mentions)", sent?.mentions?.includes(ayseMe.body.user_id) === true);
 
+// Ek: dosya seçilir, yüklenir, bağlı mesajda görünür; indirme bağlantısı içeriği aynen verir
+const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByTestId("attach").click()]);
+await chooser.setFiles({ name: "mobil-not.txt", mimeType: "text/plain", buffer: Buffer.from("mobil ek icerigi") });
+await page.getByTestId("attachment-link").first().waitFor({ timeout: 15000 });
+check("mobil: ek yüklenir ve mesaja bağlı görünür", true);
+// Tarayıcı dosyayı indirir (Content-Disposition: attachment); indirme isteğinin adresinden içerik doğrulanır
+const [popup, downloadReq] = await Promise.all([
+  ctx.waitForEvent("page"),
+  ctx.waitForEvent("request", (r) => r.url().includes("/download")),
+  page.getByTestId("attachment-link").first().click(),
+]);
+const downloaded = await (await fetch(downloadReq.url())).text();
+check("mobil: ek indirme bağlantısı içeriği aynen verir", downloaded.includes("mobil ek icerigi"));
+await popup.close().catch(() => undefined);
+
 // İş ekranı: İş düğmesi konuşma listesindedir; sohbetten listeye dönülür
 await page.getByTestId("back").click();
 await page.getByTestId("conversation-item").first().waitFor({ timeout: 10000 });

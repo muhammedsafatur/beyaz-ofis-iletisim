@@ -1,0 +1,33 @@
+# Android (native): gerçek zamanlı anma. Uygulama açıkken başka bir kullanıcı anarsa banner görünür,
+# banner'a dokunmak anılan konuşmayı açar. Anmayı tetikleyen adım dışarıdan yapılır (bkz. scripts/trigger-mention.mjs).
+appId: com.beyazofis.mobile
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "email"
+    timeout: 60000
+- tapOn:
+    id: "email"
+- inputText: "ali@demo.test"
+- tapOn:
+    id: "password"
+- inputText: "demo-parola-123"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible: "Satış ekibi"
+    timeout: 30000
+
+# Bu noktada dışarıdan anma gönderilir; banner gerçek zamanlı olayla görünmelidir.
+- extendedWaitUntil:
+    visible:
+      id: "mention-banner"
+    timeout: 60000
+- tapOn:
+    id: "mention-banner"
+- extendedWaitUntil:
+    visible:
+      id: "composer"
+    timeout: 15000
