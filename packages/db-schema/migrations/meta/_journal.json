@@ -15,6 +15,13 @@
       "when": 1791938218697,
       "tag": "0001_immutable_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792053454585,
+      "tag": "0002_k3_k4_change_seq",
+      "breakpoints": true
     }
   ]
 }

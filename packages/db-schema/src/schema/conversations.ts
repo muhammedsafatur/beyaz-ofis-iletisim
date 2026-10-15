@@ -34,6 +34,10 @@ export const conversations = pgTable(
       .notNull()
       .references(() => users.userId),
     lastMessageAt: tstz("last_message_at"),
+    // K4: değişiklik sayacı (gönderim, düzenleme, silme). messages.change_seq buradan atanır.
+    lastChangeSeq: bigint("last_change_seq", { mode: "number" }).notNull().default(0),
+    // K4: GET /conversations?updated_after= için. Okundu ve üyelik olaylarında da güncellenir.
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
     createdAt: tstz("created_at").notNull().defaultNow(),
     deletedAt,
   },

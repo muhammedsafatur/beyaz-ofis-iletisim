@@ -19,6 +19,8 @@ export const messages = pgTable(
     clientMessageId: uuid("client_message_id").notNull(),
     // Konuşma içi sıra; cursor sayfalama before_seq / after_seq
     seq: bigint("seq", { mode: "number" }).notNull(),
+    // K4: gönderim, düzenleme ve silmede artan ayrı sayaç. seq boşluksuz kalır.
+    changeSeq: bigint("change_seq", { mode: "number" }).notNull(),
     content: text("content").notNull(),
     messageType: messageType("message_type").notNull().default("text"),
     sentAt: tstz("sent_at").notNull().defaultNow(),
@@ -26,8 +28,10 @@ export const messages = pgTable(
     deletedAt,
   },
   (t) => [
-    // Sayfalama ve delta polling bu index'i kullanır
+    // Sayfalama bu index'i kullanır
     uniqueIndex("messages_conversation_seq_uq").on(t.conversationId, t.seq),
+    // Delta polling (after_change_seq) bu index'i kullanır
+    uniqueIndex("messages_conversation_change_seq_uq").on(t.conversationId, t.changeSeq),
     uniqueIndex("messages_sender_client_message_uq").on(t.senderUserId, t.clientMessageId),
   ],
 );

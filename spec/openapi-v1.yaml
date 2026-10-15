@@ -176,9 +176,13 @@ paths:
     get:
       tags: [Conversations]
       summary: Konuşma listesi (son mesaj tarihine göre sıralı, okunmamış sayısı dahil)
+      description: |
+        updated_after verilirse yalnızca bu andan sonra güncellenen konuşmalar döner (K4 delta).
+        Okundu ve üyelik olayları da updated_at değerini günceller. Delta yanıtında istemci kayıtları birleştirir.
       parameters:
         - { name: cursor, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: updated_after, in: query, schema: { type: string, format: date-time } }
       responses:
         '200':
           description: Konuşmalar
@@ -311,12 +315,15 @@ paths:
       - { $ref: '#/components/parameters/ConversationId' }
     get:
       tags: [Messages]
-      summary: Mesaj listesi (before_seq ile geriye, after_seq ile yeniden bağlanmada ileri doldurma)
+      summary: Mesaj listesi (before_seq ile geriye, after_seq ile yeni mesajlar, after_change_seq ile değişenler)
       parameters:
         - { name: before_seq, in: query, schema: { type: integer, format: int64 } }
         - { name: after_seq, in: query, schema: { type: integer, format: int64 } }
+        - { name: after_change_seq, in: query, description: 'Yeni, düzenlenmiş ve silinmiş mesajları change_seq sırasıyla döner (K4)', schema: { type: integer, format: int64 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
-      description: before_seq ve after_seq birlikte kullanılamaz.
+      description: |
+        before_seq, after_seq ve after_change_seq birlikte kullanılamaz. Hiçbiri yoksa en yeni limit mesaj döner (Ç23 öneri, henüz onaylanmadı).
+        Delta polling istemcisi after_change_seq ile son gördüğü change_seq değerinden devam eder.
       responses:
         '200':
           description: Mesajlar, seq'e göre sıralı
@@ -665,6 +672,38 @@ paths:
               schema: { $ref: '#/components/schemas/AccessRequest' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /access-requests/{requestId}/targets/{departmentId}/content:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: departmentId, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [AccessRequests]
+      summary: Hedef birim yöneticisi karar öncesi içeriği okur (K3). Yalnızca o hedefin yöneticisi, hedef pending iken. Her çağrı access_log'a yazılır.
+      description: |
+        Sistem yöneticisi bu uca erişemez (yalnızca meta veri görür). Yönetici yoksa içerik açılmaz.
+        Kapsam (öneri, onaylanmadı): konuşmanın tamamı görünür.
+      responses:
+        '200':
+          description: Mesajlar, kopyalama kapalı
+          headers:
+            Cache-Control:
+              schema: { type: string, example: 'no-store' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+                  has_more: { type: boolean }
+        '403':
+          description: Hedefin yöneticisi değil ya da hedef artık pending değil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /access-requests/{requestId}/content:
     parameters:
       - { $ref: '#/components/parameters/RequestId' }
@@ -996,6 +1035,7 @@ components:
         last_message_at: { type: string, format: date-time, nullable: true }
         unread_count: { type: integer }
         is_muted: { type: boolean }
+        updated_at: { type: string, format: date-time, description: Delta için (K4) }
 
     Conversation:
       allOf:
@@ -1041,6 +1081,7 @@ components:
         sender: { $ref: '#/components/schemas/UserSummary' }
         client_message_id: { type: string, format: uuid }
         seq: { type: integer, format: int64 }
+        change_seq: { type: integer, format: int64, description: Gönderim, düzenleme ve silmede artar (K4) }
         content:
           type: string
           nullable: true
