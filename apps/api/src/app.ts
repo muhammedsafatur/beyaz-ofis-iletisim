@@ -1,15 +1,21 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import websocket from "@fastify/websocket";
 import { ZodError } from "zod";
 import { ApiError } from "./errors.js";
 import type { Db } from "./db.js";
 import { registerRoutes } from "./routes.js";
-import type { Ctx, InviteSender } from "./services/common.js";
+import { loadActor, type Ctx, type InviteSender } from "./services/common.js";
+import { verifyAccess } from "./services/auth.js";
+import { createRealtime } from "./realtime.js";
+import { createLocalStorage, type FileStorage } from "./storage.js";
+import path from "node:path";
 
 export interface AppOptions {
   db: Db;
   jwtSecret: string;
   now?: () => Date;
   invites?: InviteSender;
+  files?: FileStorage;
   logger?: boolean;
 }
 
@@ -31,6 +37,8 @@ export function buildApp(opts: AppOptions): { app: FastifyInstance; ctx: Ctx } {
     now: opts.now ?? (() => new Date()),
     jwtSecret: opts.jwtSecret,
     invites: opts.invites ?? consoleInviteSender,
+    realtime: createRealtime(),
+    files: opts.files ?? createLocalStorage(path.resolve(process.cwd(), ".data/attachments")),
   };
   const app = Fastify({ logger: opts.logger ?? false });
 
@@ -56,6 +64,32 @@ export function buildApp(opts: AppOptions): { app: FastifyInstance; ctx: Ctx } {
   });
 
   app.get("/health", async () => ({ status: "ok" }));
+  // Gerçek zamanlı kanal (Faz 2). Tarayıcı başlık gönderemediği için erişim belirteci sorguda gelir;
+  // belirteç 15 dakika geçerlidir. Kimliksiz bağlantı 4401 koduyla kapanır.
+  app.register(async (scope) => {
+    await scope.register(websocket);
+    scope.get("/api/v1/ws", { websocket: true }, (socket, req) => {
+      const token = (req.query as { access_token?: string }).access_token ?? "";
+      void (async () => {
+        let userId: string;
+        try {
+          userId = verifyAccess(token, ctx.jwtSecret);
+        } catch {
+          socket.close(4401, "UNAUTHENTICATED");
+          return;
+        }
+        const actor = await loadActor(ctx.db, userId);
+        if (!actor || actor.deleted || !actor.isActive) {
+          socket.close(4401, "UNAUTHENTICATED");
+          return;
+        }
+        const unsubscribe = ctx.realtime.subscribe(actor.id, (payload) => socket.send(payload));
+        socket.on("close", unsubscribe);
+        socket.send(JSON.stringify({ type: "hello" }));
+      })();
+    });
+  });
+
   // Spec 9: tüm uçlar /api/v1 altında. Sağlık ucu kökte kalır.
   app.register(async (scope) => registerRoutes(scope, ctx), { prefix: "/api/v1" });
   return { app, ctx };

@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
-import { conversationMembers, conversations, messageRevisions, messages, users } from "@beyaz-ofis/db-schema";
+import { attachments, conversationMembers, conversations, messageRevisions, messages, users } from "@beyaz-ofis/db-schema";
 import { ApiError, enforce } from "../errors.js";
 import { canMessage } from "../policy/canMessage.js";
 import { canChangeMessage, MESSAGE_EDIT_WINDOW_MS } from "../policy/window.js";
+import { attachmentOut, claimForMessage } from "./attachments.js";
 import { MINUTE, type CompanyLink, type PolicyUser } from "../policy/types.js";
 import {
   activeMembership,
   appendMessage,
   bumpChange,
   isDepartmentManager,
+  notifyConversation,
   loadCompanyLinks,
   loadRules,
   loadUser,
@@ -225,6 +227,7 @@ export async function createConversation(
         }
         throw e;
       });
+    await notifyConversation(ctx, created.conversationId);
     return { status: 201 as const, body: await conversationDetail(ctx, actor, created) };
   }
 
@@ -249,6 +252,7 @@ export async function createConversation(
     })));
     return c;
   });
+  await notifyConversation(ctx, group.conversationId);
   return { status: 201 as const, body: await conversationDetail(ctx, actor, group) };
 }
 
@@ -288,6 +292,7 @@ export async function addMembers(ctx: Ctx, actor: Actor, conversationId: string,
         now,
       });
     });
+    await notifyConversation(ctx, conversationId);
   }
   return conversationDetail(ctx, actor, conversation);
 }
@@ -317,6 +322,7 @@ export async function removeMember(ctx: Ctx, actor: Actor, conversationId: strin
       now,
     });
   });
+  await notifyConversation(ctx, conversationId);
 }
 
 export async function markRead(ctx: Ctx, actor: Actor, conversationId: string): Promise<void> {
@@ -372,6 +378,9 @@ export async function serializeMessages(ctx: Ctx, viewerId: string, conversation
     ? await ctx.db.select().from(users).where(inArray(users.userId, senderIds))
     : [];
   const senderMap = new Map(senders.map((u) => [u.userId, u]));
+  const msgIds = rows.map((r) => r.messageId);
+  const linked = msgIds.length ? await ctx.db.select().from(attachments).where(inArray(attachments.messageId, msgIds)) : [];
+  const attachmentByMessage = new Map(linked.map((a) => [a.messageId!, a]));
   const [conv] = await ctx.db.select().from(conversations).where(eq(conversations.conversationId, conversationId)).limit(1);
 
   return rows.map((m) => {
@@ -400,6 +409,7 @@ export async function serializeMessages(ctx: Ctx, viewerId: string, conversation
       edit_window_closes_at: own ? new Date(m.sentAt.getTime() + MESSAGE_EDIT_WINDOW_MS) : null,
       read_count: readCount,
       read_by_peer: readByPeer,
+      attachment: attachmentByMessage.has(m.messageId) ? attachmentOut(attachmentByMessage.get(m.messageId)!) : null,
     };
   });
 }
@@ -456,7 +466,7 @@ export async function postMessage(
   ctx: Ctx,
   actor: Actor,
   conversationId: string,
-  body: { client_message_id: string; content: string },
+  body: { client_message_id: string; content: string; attachment_id?: string | undefined },
 ): Promise<{ status: 200 | 201; body: unknown }> {
   const { conversation } = await activeMembership(ctx.db, conversationId, actor.id);
 
@@ -490,16 +500,19 @@ export async function postMessage(
   }
 
   try {
-    const m = await ctx.db.transaction((tx) =>
-      appendMessage(tx, {
+    const m = await ctx.db.transaction(async (tx) => {
+      const row = await appendMessage(tx, {
         conversationId,
         senderId: actor.id,
         type: "text",
         content: body.content,
         clientMessageId: body.client_message_id,
         now,
-      }),
-    );
+      });
+      if (body.attachment_id) await claimForMessage(tx, body.attachment_id, conversationId, actor.id, row.messageId);
+      return row;
+    });
+    await notifyConversation(ctx, conversationId);
     return { status: 201, body: (await serializeMessages(ctx, actor.id, conversationId, [m]))[0] };
   } catch (e) {
     if (!isUniqueViolation(e)) throw e;
@@ -533,6 +546,7 @@ export async function editMessage(ctx: Ctx, actor: Actor, messageId: string, con
       .set({ content, editedAt: now, changeSeq })
       .where(eq(messages.messageId, messageId));
   });
+  await notifyConversation(ctx, m.conversationId);
   const [fresh] = await ctx.db.select().from(messages).where(eq(messages.messageId, messageId)).limit(1);
   return (await serializeMessages(ctx, actor.id, m.conversationId, [fresh!]))[0];
 }
@@ -551,5 +565,6 @@ export async function deleteMessage(ctx: Ctx, actor: Actor, messageId: string): 
       .set({ deletedAt: now, changeSeq })
       .where(eq(messages.messageId, messageId));
   });
+  await notifyConversation(ctx, m.conversationId);
 }
 

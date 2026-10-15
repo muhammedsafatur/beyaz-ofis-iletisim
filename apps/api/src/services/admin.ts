@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import {
   approvalRules,
+  auditLog,
   companies,
   companyLinks,
   conversationMembers,
@@ -20,6 +21,7 @@ import {
   audit,
   loadRules,
   loadUser,
+  notifyConversation,
   requireSystemAdmin,
   userSummary,
   type Actor,
@@ -137,12 +139,14 @@ export async function deactivateUser(ctx: Ctx, actor: Actor, userId: string) {
   requireSystemAdmin(actor);
   const target = await getUserRow(ctx, userId);
   const now = ctx.now();
+  const affected: string[] = [];
   await ctx.db.transaction(async (tx) => {
     await tx.update(users).set({ isActive: false, updatedAt: now }).where(eq(users.userId, userId));
     const memberships = await tx
       .select({ conversationId: conversationMembers.conversationId })
       .from(conversationMembers)
       .where(and(eq(conversationMembers.userId, userId), isNull(conversationMembers.leftAt)));
+    affected.push(...memberships.map((m) => m.conversationId));
     for (const m of memberships) {
       await tx
         .update(conversationMembers)
@@ -159,6 +163,7 @@ export async function deactivateUser(ctx: Ctx, actor: Actor, userId: string) {
     }
   });
   await logoutAll(ctx, userId);
+  for (const m of affected) await notifyConversation(ctx, m);
   await audit(ctx.db, actor.id, "user", userId, "deactivate", { is_active: true }, { is_active: false });
   return userOut(ctx, await getUserRow(ctx, userId));
 }
@@ -494,3 +499,45 @@ function rulesOut(r: typeof approvalRules.$inferSelect) {
   };
 }
 
+
+// Faz 2: denetim kaydı ekranı. Yalnızca sistem yöneticisi. Kayıtlar değiştirilemez (0007), en yeni önce.
+function encodeAuditCursor(id: number): string {
+  return Buffer.from(String(id), "utf8").toString("base64url");
+}
+
+function decodeAuditCursor(cursor: string): number {
+  const n = Number(Buffer.from(cursor, "base64url").toString("utf8"));
+  if (!Number.isInteger(n) || n <= 0) throw new ApiError("VALIDATION_FAILED", "Geçersiz imleç.");
+  return n;
+}
+
+export async function listAuditLog(ctx: Ctx, actor: Actor, q: { cursor?: string | undefined; limit: number }) {
+  requireSystemAdmin(actor);
+  const before = q.cursor ? decodeAuditCursor(q.cursor) : null;
+  const rows = await ctx.db
+    .select()
+    .from(auditLog)
+    .where(before !== null ? lt(auditLog.auditId, before) : undefined)
+    .orderBy(desc(auditLog.auditId))
+    .limit(q.limit + 1);
+  const page = rows.slice(0, q.limit);
+  const actorIds = [...new Set(page.map((r) => r.actorUserId))];
+  const actors = new Map<string, Awaited<ReturnType<typeof loadUser>>>();
+  for (const id of actorIds) actors.set(id, await loadUser(ctx.db, id));
+  return {
+    items: page.map((r) => {
+      const a = actors.get(r.actorUserId);
+      return {
+        audit_id: r.auditId,
+        actor: a ? { user_id: a.id, first_name: a.firstName, last_name: a.lastName, job_title: a.jobTitle, is_active: a.isActive } : null,
+        entity_type: r.entityType,
+        entity_id: r.entityId,
+        action: r.action,
+        before: r.before,
+        after: r.after,
+        created_at: r.createdAt,
+      };
+    }),
+    next_cursor: rows.length > q.limit && page.length > 0 ? encodeAuditCursor(page[page.length - 1]!.auditId) : null,
+  };
+}

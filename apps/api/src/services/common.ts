@@ -13,6 +13,8 @@ import {
 } from "@beyaz-ofis/db-schema";
 import type { ErrorCode } from "@beyaz-ofis/core";
 import type { Db } from "../db.js";
+import type { Realtime } from "../realtime.js";
+import type { FileStorage } from "../storage.js";
 import { ApiError, enforce } from "../errors.js";
 import type { CompanyLink, Decision, PolicyUser, Role } from "../policy/types.js";
 
@@ -22,6 +24,8 @@ export interface Ctx {
   now: () => Date;
   jwtSecret: string;
   invites: InviteSender;
+  realtime: Realtime;
+  files: FileStorage;
 }
 
 export interface InviteSender {
@@ -250,6 +254,15 @@ export function userSummary(u: { userId: string; firstName: string; lastName: st
 // Aktör (politika görünümü) için kullanıcı özeti.
 export function actorSummary(a: Actor) {
   return { user_id: a.id, first_name: a.firstName, last_name: a.lastName, job_title: a.jobTitle, is_active: a.isActive };
+}
+
+// Konuşmanın aktif üyelerine değişiklik bildirimi. Yalnızca konu bilgisi gider, içerik gitmez.
+export async function notifyConversation(ctx: Ctx, conversationId: string): Promise<void> {
+  const rows = await ctx.db
+    .select({ userId: conversationMembers.userId })
+    .from(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), isNull(conversationMembers.leftAt)));
+  ctx.realtime.publish(rows.map((r) => r.userId), { type: "conversation.changed", conversation_id: conversationId });
 }
 
 export function enforceDecision(d: Decision): void {

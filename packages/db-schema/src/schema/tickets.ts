@@ -96,3 +96,20 @@ export const ticketRevisions = pgTable(
   },
   (t) => [index("ticket_revisions_ticket_idx").on(t.ticketId)],
 );
+
+// Faz 2: ticket yorumları. Görünürlük ticket gövdesiyle aynıdır (talep eden ve patron).
+export const ticketComments = pgTable(
+  "ticket_comments",
+  {
+    commentId: bigint("comment_id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.ticketId),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.userId),
+    body: text("body").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("ticket_comments_ticket_idx").on(t.ticketId)],
+);

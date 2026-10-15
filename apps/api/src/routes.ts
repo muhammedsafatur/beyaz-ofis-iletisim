@@ -7,6 +7,7 @@ import * as people from "./services/people.js";
 import * as conv from "./services/conversations.js";
 import * as tickets from "./services/tickets.js";
 import * as reqs from "./services/accessRequests.js";
+import * as att from "./services/attachments.js";
 import { loadActor, type Actor, type Ctx } from "./services/common.js";
 import { verifyAccess } from "./services/auth.js";
 
@@ -55,7 +56,11 @@ const msgQuery = z.object({
   after_change_seq: z.coerce.number().int().min(0).optional(),
   limit: page(50),
 });
-const msgCreate = z.object({ client_message_id: uuid, content: z.string().min(1).max(4000) });
+const msgCreate = z.object({
+  client_message_id: uuid,
+  content: z.string().min(1).max(4000),
+  attachment_id: uuid.optional(),
+});
 const msgEdit = z.object({ content: z.string().min(1).max(4000) });
 const canSendBody = z.object({ target_user_id: uuid, company_context_id: pos.nullable().optional() });
 const ticketQuery = z.object({
@@ -80,6 +85,9 @@ const requestCreate = z.object({
   target_department_ids: z.array(pos).min(1),
 });
 const eventBody = z.object({ type: z.enum(["copy_blocked"]) });
+const commentBody = z.object({ body: z.string().min(1).max(2000) });
+const auditQuery = z.object({ cursor: z.string().optional(), limit: page(50) });
+const downloadQuery = z.object({ exp: z.coerce.number(), sig: z.string().min(1).max(200) });
 const adminUserCreate = z.object({
   first_name: z.string().min(1).max(80),
   last_name: z.string().min(1).max(80),
@@ -131,6 +139,11 @@ function noStore(reply: FastifyReply) {
 }
 
 export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
+  app.addContentTypeParser(
+    [...att.ALLOWED_CONTENT_TYPES],
+    { parseAs: "buffer", bodyLimit: att.MAX_ATTACHMENT_BYTES },
+    (_req, body, done) => done(null, body),
+  );
   // Kimlik doğrulama: erişim belirteci her istekte kontrol edilir, kullanıcı DB'den yeniden okunur (B4).
   const authenticate = async (req: FastifyRequest) => {
     const h = req.headers.authorization;
@@ -326,7 +339,54 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
     return reply.send(await reqs.targetContent(ctx, req.actor, id, departmentId));
   });
 
+  // --- Dosya ekleri (Faz 2) ---
+  app.post("/conversations/:id/attachments", guarded, async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const rawName = req.headers["x-file-name"];
+    let fileName = "dosya";
+    if (typeof rawName === "string") {
+      try {
+        fileName = decodeURIComponent(rawName);
+      } catch {
+        fileName = rawName;
+      }
+    }
+    const contentType = String(req.headers["content-type"] ?? "").split(";")[0]!.trim();
+    const data = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    return reply.status(201).send(await att.uploadAttachment(ctx, req.actor, id, { contentType, fileName, data }));
+  });
+  app.get("/attachments/:id/url", guarded, async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    return reply.send(await att.downloadUrl(ctx, req.actor, id));
+  });
+  // İmzalı indirme: oturum belirteci gerekmez, imza ve süre doğrulanır.
+  app.get("/attachments/:id/download", async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const q = parse(downloadQuery, req.query);
+    const { row, data } = await att.readSigned(ctx, id, q.exp, q.sig);
+    void reply.header("content-type", row.contentType);
+    void reply.header("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(row.fileName)}`);
+    void reply.header("cache-control", "private, no-store");
+    void reply.header("x-content-type-options", "nosniff");
+    return reply.send(data);
+  });
+
+  // --- Ticket yorumları (Faz 2) ---
+  app.get("/tickets/:id/comments", guarded, async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    return reply.send(await tickets.listComments(ctx, req.actor, id));
+  });
+  app.post("/tickets/:id/comments", guarded, async (req, reply) => {
+    const { id } = parse(idParam, req.params);
+    const body = parse(commentBody, req.body);
+    return reply.status(201).send(await tickets.addComment(ctx, req.actor, id, body.body));
+  });
+
   // --- Yönetim (sistem yöneticisi) ---
+  app.get("/admin/audit-log", guarded, async (req, reply) => {
+    const q = parse(auditQuery, req.query);
+    return reply.send(await admin.listAuditLog(ctx, req.actor, q));
+  });
   app.post("/admin/users", guarded, async (req, reply) => {
     const body = parse(adminUserCreate, req.body);
     return reply.status(201).send(await admin.createUser(ctx, req.actor, body));

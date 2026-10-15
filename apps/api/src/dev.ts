@@ -6,7 +6,7 @@ import { buildApp } from "./app.js";
 import { createTestDb } from "./db.js";
 import { hashPassword } from "./services/auth.js";
 import { createConversation, postMessage } from "./services/conversations.js";
-import { loadActor, type Ctx } from "./services/common.js";
+import { audit, loadActor, type Ctx } from "./services/common.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const PASSWORD = "demo-parola-123";
@@ -32,6 +32,15 @@ async function seed(ctx: Ctx) {
       .returning();
     ids.set(p.email, u!.userId);
     if (p.dept) await db.insert(userDepartments).values({ userId: u!.userId, departmentId: p.dept.departmentId });
+  }
+
+  // Denetim kaydı örnekleri: kurulum adımları da yönetici eylemi olarak kaydedilir.
+  const adminId = ids.get("admin@demo.test")!;
+  await audit(db, adminId, "company", String(company!.companyId), "create", undefined, { name: "Demo Şirket" });
+  await audit(db, adminId, "department", String(sales!.departmentId), "create", undefined, { name: "Satış" });
+  await audit(db, adminId, "department", String(hr!.departmentId), "create", undefined, { name: "İnsan Kaynakları" });
+  for (const p of people.filter((x) => x.role !== "system_admin")) {
+    await audit(db, adminId, "user", ids.get(p.email)!, "create", undefined, { first_name: p.first, last_name: p.last });
   }
 
   const ali = await loadActor(db, ids.get("ali@demo.test")!);

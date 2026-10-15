@@ -8,6 +8,16 @@
 
 ## 0b. Değişiklik özeti (v0.6 → v0.7)
 
+**Faz 2 (uygulandı)**
+- **Gerçek zamanlı kanal:** `/api/v1/ws` (WebSocket). Konuşma değişikliğinde üyelere yalnızca konu kimliği gider (`conversation.changed`), içerik gitmez. İstemci delta uçlarından çeker. Yoklama yedek olarak sürer. Kimliksiz bağlantı 4401 ile kapanır.
+- **Dosya ekleri:** Yükleme `POST /conversations/:id/attachments` (ham gövde, en fazla 10 MB, türler: png, jpeg, gif, webp, pdf, text/plain). Mesaja `attachment_id` ile bağlanır, bir ek bir kez bağlanır. İndirme imzalıdır (5 dakika), oturum belirteci gerekmez, süre ve imza doğrulanır.
+- **Ticket yorumları:** `GET` ve `POST /tickets/:id/comments`. Görünürlük gövdeyle aynıdır: talep eden ve patron.
+- **Denetim kaydı:** `GET /admin/audit-log` (yalnızca sistem yöneticisi, değiştirilemez kayıtlar, en yeni önce).
+- **Yerleşik sınırlar:** Dosya deposu şimdilik yerel dizin (`apps/api/.data/attachments`). Üretim için nesne deposu ve virüs taraması kararı bekliyor.
+
+**Faz 2 (uygulanmadı)**
+- **Push bildirimi:** Bir push sağlayıcısının (FCM/APNs) kimlik bilgileri ve seçimi gerekiyor. Kod tarafı hazır değil.
+
 **Kullanıcı kararları**
 - **Patron (K3 ile birlikte):** "Yönetici" patrondur, birim yöneticisi değildir. Patron kurum genelinde tek bir roldür (`users.role = 'executive'`), birime atanmaz. Erişim talebi ve ticket kararını patron verir, karar öncesi içeriği görür. Birim yöneticisi bu akışlarda içerik görmez ve karar vermez. Patron yoksa karar sistem yöneticisindedir, yalnızca meta veriyle.
 - **Ç8:** Grupta üye ekleme ve çıkarma grup kurucusundadır (`conversations.created_by`). Birim kanalında birim yöneticisindedir. Eklenen her üye için `canMessage(ekleyen, üye)` geçmelidir.
@@ -388,10 +398,10 @@ Değerler kodda sabit değil, tabloda tutulur. Her değişiklik `audit_log`'a ya
 - Eski mesaj erişim talebi (çok birimli onay, süreli erişim, yeniden açma, kopyalama olayı)
 - Ayrılan çalışan kuralı
 
-**Faz 2**
-- WebSocket realtime, push bildirim
-- Dosya ekleri, ticket yorumları
-- Audit log ekranı
+**Faz 2** (durum: push hariç uygulandı, bkz. §0b)
+- WebSocket realtime (uygulandı), push bildirim (uygulanmadı, sağlayıcı kararı bekliyor)
+- Dosya ekleri (uygulandı, yerel depo), ticket yorumları (uygulandı)
+- Audit log ekranı (uygulandı: API ve masaüstü paneli, yalnızca sistem yöneticisi)
 
 **Faz 3**
 - Arama (yetki kurallarına uyacak şekilde)
@@ -412,6 +422,9 @@ Değerler kodda sabit değil, tabloda tutulur. Her değişiklik `audit_log`'a ya
 | 4 | Meta veri listesi | Kapandı: OpenAPI listesi, üye sayısı dahil, Ç6 ile genişletildi |
 | 5 | Patron rolü ve karar yetkisi | Kapandı: `users.role = 'executive'`, kurum genelinde |
 | 6 | Kanal yetkisi (Ç8) | Kapandı: grup kurucusu ve birim yöneticisi |
+| 7 | Push bildirimi sağlayıcısı | Açık: FCM/APNs ya da Expo Push seçimi ve kimlik bilgileri |
+| 8 | Üretim dosya deposu ve virüs taraması | Açık: yerel dizin mi nesne deposu mu, tarama servisi var mı |
+| 9 | Ticket ve erişim talebi arayüzleri | Açık: istemcilerde yalnızca sohbet arayüzü var; ticket ve talep ekranları yapılmadı |
 
 ---
 
@@ -426,4 +439,4 @@ Değerler kodda sabit değil, tabloda tutulur. Her değişiklik `audit_log`'a ya
 7. Erişim talebi endpoint'leri.
 8. `packages/core` sync motoru, desktop üzerinden test edilir.
 9. Mobil istemci aynı core üzerine kurulur.
-10. Faz 2.
+10. Faz 2 (push hariç uygulandı; push sağlayıcısı kararı bekliyor).

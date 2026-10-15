@@ -394,6 +394,7 @@ paths:
               properties:
                 client_message_id: { type: string, format: uuid }
                 content: { type: string, minLength: 1, maxLength: 4000 }
+                attachment_id: { type: string, format: uuid, description: Faz 2. Önceden yüklenmiş ve bu konuşmaya ait, henüz bağlanmamış ek. }
       responses:
         '201':
           description: Kaydedildi
@@ -1257,6 +1258,137 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /conversations/{conversationId}/attachments:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    post:
+      tags: [Messages]
+      summary: "Dosya yükle (Faz 2). Ham gövde, Content-Type dosyanın türüdür. X-File-Name başlığı URI kodlu dosya adıdır. En fazla 10 MB. İzinli türler: png, jpeg, gif, webp, pdf, text/plain."
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/gif: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+          application/pdf: { schema: { type: string, format: binary } }
+          text/plain: { schema: { type: string, format: binary } }
+      responses:
+        '201':
+          description: Yüklendi. Ek henüz bir mesaja bağlı değildir.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentMeta' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attachments/{attachmentId}/url:
+    parameters:
+      - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Messages]
+      summary: İmzalı indirme bağlantısı (Faz 2). Yalnızca konuşmanın aktif üyesi alır. Bağlantı 5 dakika geçerlidir.
+      responses:
+        '200':
+          description: Bağlantı
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, description: Göreli yol. Oturum belirteci gerekmez. }
+                  expires_at: { type: string, format: date-time }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attachments/{attachmentId}/download:
+    parameters:
+      - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: exp, in: query, required: true, schema: { type: integer, format: int64 } }
+      - { name: sig, in: query, required: true, schema: { type: string } }
+    get:
+      tags: [Messages]
+      summary: İmzalı dosya indirme (Faz 2). Oturum belirteci gerekmez; imza ve süre doğrulanır. Yanıt Cache-Control private, no-store ve nosniff ile gelir.
+      security: []
+      responses:
+        '200':
+          description: Dosya içeriği
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '403':
+          description: İmza geçersiz ya da bağlantının süresi doldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tickets/{ticketId}/comments:
+    parameters:
+      - { $ref: '#/components/parameters/TicketId' }
+    get:
+      tags: [Tickets]
+      summary: "Ticket yorumları (Faz 2). Görünürlük gövdeyle aynıdır: talep eden ve patron."
+      responses:
+        '200':
+          description: Yorumlar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TicketComment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Tickets]
+      summary: Ticket yorumu ekle (Faz 2). 1-2000 karakter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Eklendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketComment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/audit-log:
+    get:
+      tags: [Admin]
+      summary: Denetim kaydı (Faz 2). Yalnızca sistem yöneticisi. Kayıtlar değiştirilemez, en yeni önce. Parola, mesaj içeriği ve ticket gövdesi kayda girmez.
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Denetim kayıtları
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+                  next_cursor: { type: string, nullable: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /ws:
+    get:
+      tags: [Conversations]
+      summary: "Gerçek zamanlı kanal (Faz 2, WebSocket). Erişim belirteci sorgu parametresinde gelir: /ws?access_token=... Kimliksiz bağlantı 4401 koduyla kapanır. Sunucu olayları: hello ve conversation.changed (yalnızca konu kimliği, içerik yok). İstemci değişikliği delta uçlarından çeker."
+      parameters:
+        - { name: access_token, in: query, required: true, schema: { type: string } }
+      responses:
+        '101': { description: Switching Protocols }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1299,6 +1431,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     Conflict:
       description: Durum çakışması (ör. kapalı talep, süresi dolmuş işlem)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Validation:
+      description: İstek doğrulanamadı (VALIDATION_FAILED)
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1416,6 +1553,38 @@ components:
         city: { type: string, nullable: true, description: Nullable (B15) }
         address: { type: string, nullable: true, description: Nullable (B15) }
 
+    AttachmentMeta:
+      type: object
+      properties:
+        attachment_id: { type: string, format: uuid }
+        file_name: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+
+    TicketComment:
+      type: object
+      properties:
+        comment_id: { type: integer, format: int64 }
+        author: { $ref: '#/components/schemas/UserSummary' }
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+
+    AuditEntry:
+      type: object
+      properties:
+        audit_id: { type: integer, format: int64 }
+        actor: { $ref: '#/components/schemas/UserSummary' }
+        entity_type:
+          type: string
+          enum: [user, department, company, location, company_link, department_manager, approval_rules]
+        entity_id: { type: string }
+        action:
+          type: string
+          enum: [create, update, deactivate, activate, delete, revoke, assign, unassign]
+        before: { type: object, nullable: true }
+        after: { type: object, nullable: true }
+        created_at: { type: string, format: date-time }
+
     ApprovalRules:
       type: object
       description: Tek satır yapılandırma (B3)
@@ -1502,6 +1671,11 @@ components:
           type: boolean
           nullable: true
           description: Birebirde, yalnızca gönderenin kendi mesajlarında dolu (K2). Karşı taraf okuduysa true.
+        attachment:
+          allOf:
+            - $ref: '#/components/schemas/AttachmentMeta'
+          nullable: true
+          description: Faz 2. Mesaja bağlı dosya eki.
 
     Ticket:
       allOf:

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
-import { departments, ticketDecisions, ticketRevisions, tickets, users } from "@beyaz-ofis/db-schema";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { departments, ticketComments, ticketDecisions, ticketRevisions, tickets, users } from "@beyaz-ofis/db-schema";
 import { ApiError, enforce } from "../errors.js";
 import { canDecideTicket, canEditTicket, canWithdrawTicket, TICKET_EDIT_WINDOW_MS, type TicketState } from "../policy/ticket.js";
 import { HOUR } from "../policy/types.js";
@@ -257,3 +257,41 @@ export async function reopenTicket(ctx: Ctx, actor: Actor, ticketId: string) {
   return fullOf(ctx, n, actor, "full");
 }
 
+
+// Faz 2: ticket yorumları. Görünürlük gövdeyle aynıdır: yalnızca talep eden ve patron.
+const COMMENT_MAX = 2000;
+
+export async function listComments(ctx: Ctx, actor: Actor, ticketId: string) {
+  const t = await loadTicket(ctx, ticketId);
+  if (viewOf(t, actor, await hasActiveExecutive(ctx.db)) !== "full") throw new ApiError("FORBIDDEN");
+  const rows = await ctx.db
+    .select()
+    .from(ticketComments)
+    .where(eq(ticketComments.ticketId, ticketId))
+    .orderBy(asc(ticketComments.commentId));
+  const authors = new Map<string, Actor | null>();
+  for (const r of rows) if (!authors.has(r.authorId)) authors.set(r.authorId, await loadUser(ctx.db, r.authorId));
+  return {
+    items: rows.map((r) => {
+      const a = authors.get(r.authorId);
+      return {
+        comment_id: r.commentId,
+        author: a ? actorSummary(a) : null,
+        body: r.body,
+        created_at: r.createdAt,
+      };
+    }),
+  };
+}
+
+export async function addComment(ctx: Ctx, actor: Actor, ticketId: string, body: string) {
+  const t = await loadTicket(ctx, ticketId);
+  if (viewOf(t, actor, await hasActiveExecutive(ctx.db)) !== "full") throw new ApiError("FORBIDDEN");
+  if (body.trim().length === 0 || body.length > COMMENT_MAX) throw new ApiError("VALIDATION_FAILED", "Yorum 1-2000 karakter olmalı.");
+  const [c] = await ctx.db
+    .insert(ticketComments)
+    .values({ ticketId, authorId: actor.id, body, createdAt: ctx.now() })
+    .returning();
+  if (!c) throw new ApiError("INTERNAL_ERROR");
+  return { comment_id: c.commentId, author: actorSummary(actor), body: c.body, created_at: c.createdAt };
+}

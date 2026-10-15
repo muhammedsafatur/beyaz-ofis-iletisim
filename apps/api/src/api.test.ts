@@ -7,6 +7,8 @@ import type { InviteSender, Ctx } from "./services/common.js";
 import { hashPassword } from "./services/auth.js";
 import { expireDue } from "./services/scheduler.js";
 import type { PGlite } from "@electric-sql/pglite";
+import { WebSocket } from "ws";
+import { createMemoryStorage } from "./storage.js";
 
 const SECRET = "test-secret-with-at-least-32-characters";
 const PASSWORD = "parola-123456";
@@ -92,7 +94,7 @@ beforeAll(async () => {
   db = t.db;
   client = t.client;
   clock = new Date("2026-10-15T10:00:00Z");
-  const opts: AppOptions = { db, jwtSecret: SECRET, now: () => clock, invites: sender, logger: false };
+  const opts: AppOptions = { db, jwtSecret: SECRET, now: () => clock, invites: sender, files: createMemoryStorage(), logger: false };
   const built = buildApp(opts);
   app = built.app;
   ctx = built.ctx;
@@ -685,5 +687,217 @@ describe("yönetim denetimi", () => {
     expect(bad.status).toBe(400);
     const ok = await call("PATCH", "/admin/approval-rules", admin, { message_rate_per_min: 80 });
     expect(ok.body.message_rate_per_min).toBe(80);
+  });
+});
+
+describe("gerçek zamanlı kanal (Faz 2)", () => {
+  // Bağlantı kurulur kurulmaz gelen tüm iletiler bir kutuda toplanır (hello kaybolmaz).
+  async function connect(url: string) {
+    const socket = new WebSocket(url);
+    const inbox: any[] = [];
+    socket.on("message", (raw) => inbox.push(JSON.parse(String(raw))));
+    await new Promise<void>((resolve, reject) => {
+      socket.once("open", () => resolve());
+      socket.once("error", reject);
+    });
+    const next = (match: (m: any) => boolean, ms: number): Promise<any | null> =>
+      new Promise((resolve) => {
+        const found = inbox.find(match);
+        if (found) return resolve(found);
+        const onMsg = (raw: unknown) => {
+          const m = JSON.parse(String(raw));
+          if (match(m)) {
+            clearTimeout(timer);
+            socket.off("message", onMsg);
+            resolve(m);
+          }
+        };
+        const timer = setTimeout(() => {
+          socket.off("message", onMsg);
+          resolve(null);
+        }, ms);
+        socket.on("message", onMsg);
+      });
+    return { socket, next };
+  }
+
+  let admin: string;
+  let a: { id: string; token: string };
+  let b: { id: string; token: string };
+  let c: { id: string; token: string };
+  let conv: string;
+
+  beforeAll(async () => {
+    admin = await seedAdmin("rt-admin@sirket.test");
+    const dept = (await call("POST", "/admin/departments", admin, {
+      company_id: (await call("POST", "/admin/companies", admin, { name: "Canlı Şirket" })).body.company_id,
+      name: "Canlı",
+    })).body.department_id;
+    a = await createUser(admin, "rta@sirket.test", [dept]);
+    b = await createUser(admin, "rtb@sirket.test", [dept]);
+    c = await createUser(admin, "rtc@sirket.test", [dept]);
+    conv = (await call("POST", "/conversations", a.token, { type: "direct", member_ids: [b.id] })).body.conversation_id;
+  });
+
+  it("kimliksiz bağlantı 4401 ile kapanır", async () => {
+    const socket = new WebSocket(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=sahte`);
+    const code = await new Promise<number>((resolve) => socket.once("close", (c) => resolve(c)));
+    expect(code).toBe(4401);
+  });
+
+  it("konuşma üyesi, karşı tarafın gönderdiği mesajın olayını anında alır", async () => {
+    const { socket, next } = await connect(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=${b.token}`);
+    expect(await next((m) => m.type === "hello", 2000)).not.toBeNull();
+    const event = next((m) => m.type === "conversation.changed", 3000);
+    await call("POST", `/conversations/${conv}/messages`, a.token, { client_message_id: randomUUID(), content: "Canlı olay" });
+    expect(await event).toEqual({ type: "conversation.changed", conversation_id: conv });
+    socket.close();
+  });
+
+  it("üye olmayan kullanıcı bu konuşmanın olaylarını almaz", async () => {
+    const { socket, next } = await connect(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=${c.token}`);
+    await next((m) => m.type === "hello", 2000);
+    const leak = next((m) => m.type === "conversation.changed" && m.conversation_id === conv, 800);
+    await call("POST", `/conversations/${conv}/messages`, a.token, { client_message_id: randomUUID(), content: "Gizli" });
+    expect(await leak).toBeNull();
+    socket.close();
+  });
+});
+
+// Ham gövde yükleme: dosya ekleri, ek bağlama, imzalı indirme.
+async function upload(token: string, convId: string, contentType: string, name: string, bytes: Uint8Array): Promise<Res> {
+  const res = await fetch(`${baseUrl}/api/v1/conversations/${convId}/attachments`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": contentType, "x-file-name": encodeURIComponent(name) },
+    body: bytes,
+  });
+  const text = await res.text();
+  return { status: res.status, body: text ? JSON.parse(text) : null, headers: Object.fromEntries(res.headers.entries()) };
+}
+
+describe("dosya ekleri (Faz 2)", () => {
+  let admin: string;
+  let u1: { id: string; token: string };
+  let u2: { id: string; token: string };
+  let outsider: { id: string; token: string };
+  let conv: string;
+  let attachmentId: string;
+
+  beforeAll(async () => {
+    admin = await seedAdmin("ek-admin@sirket.test");
+    const dept = (await call("POST", "/admin/departments", admin, {
+      company_id: (await call("POST", "/admin/companies", admin, { name: "Ek Şirketi" })).body.company_id,
+      name: "Dosya",
+    })).body.department_id;
+    u1 = await createUser(admin, "ek1@sirket.test", [dept]);
+    u2 = await createUser(admin, "ek2@sirket.test", [dept]);
+    outsider = await createUser(admin, "ekdis@sirket.test", [dept]);
+    conv = (await call("POST", "/conversations", u1.token, { type: "direct", member_ids: [u2.id] })).body.conversation_id;
+  });
+
+  it("izin verilen türde dosya yüklenir, izinsiz tür reddedilir", async () => {
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+    const ok = await upload(u1.token, conv, "image/png", "rapor görseli.png", png);
+    expect(ok.status).toBe(201);
+    expect(ok.body.file_name).toBe("rapor görseli.png");
+    expect(ok.body.size_bytes).toBe(png.length);
+    attachmentId = ok.body.attachment_id;
+    const bad = await upload(u1.token, conv, "application/x-msdownload", "virus.exe", new Uint8Array([1, 2]));
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("boyut sınırı aşılınca reddedilir (10 MB)", async () => {
+    const big = new Uint8Array(10 * 1024 * 1024 + 1);
+    // Sunucu sınırı aşan gövdeyi okumadan reddeder; istemci bağlantının kesildiğini görebilir (ECONNRESET).
+    const r = await upload(u1.token, conv, "text/plain", "buyuk.txt", big).catch(() => ({ status: 0, body: null as any }));
+    expect([0, 400]).toContain(r.status);
+    if (r.status === 400) expect(r.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("ek mesaja bağlanır, mesaj çıktısında ek bilgisi görünür, ikinci kez bağlanamaz", async () => {
+    const r = await call("POST", `/conversations/${conv}/messages`, u1.token, {
+      client_message_id: randomUUID(),
+      content: "Ekte rapor var",
+      attachment_id: attachmentId,
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.attachment.file_name).toBe("rapor görseli.png");
+    const again = await call("POST", `/conversations/${conv}/messages`, u1.token, {
+      client_message_id: randomUUID(),
+      content: "Aynı ek yeniden",
+      attachment_id: attachmentId,
+    });
+    expect(again.status).toBe(400);
+    expect(again.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("imzalı indirme bağlantısı üyeye verilir, dosya aynen iner", async () => {
+    const url = await call("GET", `/attachments/${attachmentId}/url`, u2.token);
+    expect(url.status).toBe(200);
+    const res = await fetch(`${baseUrl}${url.body.url.replace("/api/v1", "/api/v1")}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(bytes)).toEqual([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+  });
+
+  it("sahte imza, süresi dolmuş bağlantı ve üye olmayanın bağlantı talebi reddedilir", async () => {
+    const url = (await call("GET", `/attachments/${attachmentId}/url`, u2.token)).body.url as string;
+    const tampered = url.replace(/sig=[0-9a-f]/, (m) => (m === "sig=0" ? "sig=1" : "sig=0"));
+    expect((await fetch(baseUrl + tampered)).status).toBe(403);
+    advance(6 * MIN);
+    expect((await fetch(baseUrl + url)).status).toBe(403);
+    const out = await call("GET", `/attachments/${attachmentId}/url`, outsider.token);
+    expect(out.status).toBe(404);
+  });
+});
+
+describe("ticket yorumları ve denetim kaydı (Faz 2)", () => {
+  let admin: string;
+  let dept: number;
+  let requester: { id: string; token: string };
+  let patron: { id: string; token: string };
+  let colleague: { id: string; token: string };
+  let ticket: string;
+
+  beforeAll(async () => {
+    admin = await seedAdmin("yorum-admin@sirket.test");
+    const company = (await call("POST", "/admin/companies", admin, { name: "Yorum Şirketi" })).body.company_id;
+    dept = (await call("POST", "/admin/departments", admin, { company_id: company, name: "Yorum" })).body.department_id;
+    requester = await createUser(admin, "yr@sirket.test", [dept]);
+    colleague = await createUser(admin, "yc@sirket.test", [dept]);
+    patron = await createUser(admin, "yp@sirket.test", [dept], "executive");
+    ticket = (await call("POST", "/tickets", requester.token, {
+      client_request_id: randomUUID(),
+      target_department_id: dept,
+      title: "Yorum testi",
+      body: "Yorum görünürlüğü için gövde metni.",
+    })).body.ticket_id;
+  });
+
+  it("talep eden ve patron yorum yazabilir, çalışan okuyamaz", async () => {
+    const mine = await call("POST", `/tickets/${ticket}/comments`, requester.token, { body: "Ek bilgi: acil." });
+    expect(mine.status).toBe(201);
+    expect(mine.body.author.user_id).toBe(requester.id);
+    const pat = await call("POST", `/tickets/${ticket}/comments`, patron.token, { body: "Not alındı." });
+    expect(pat.status).toBe(201);
+    const list = await call("GET", `/tickets/${ticket}/comments`, patron.token);
+    expect(list.body.items.map((i: any) => i.body)).toEqual(["Ek bilgi: acil.", "Not alındı."]);
+    expect((await call("GET", `/tickets/${ticket}/comments`, colleague.token)).status).toBe(403);
+    expect((await call("POST", `/tickets/${ticket}/comments`, colleague.token, { body: "Girmeyeyim" })).status).toBe(403);
+  });
+
+  it("denetim kaydı yalnızca sistem yöneticisine açıktır ve değişiklikleri listeler", async () => {
+    const r = await call("GET", "/admin/audit-log?limit=5", admin);
+    expect(r.status).toBe(200);
+    expect(r.body.items.length).toBeGreaterThan(0);
+    expect(r.body.items[0]).toHaveProperty("entity_type");
+    // Parola ya da içerik denetim kaydına girmez
+    expect(JSON.stringify(r.body.items)).not.toMatch(/password|passwordHash/);
+    expect((await call("GET", "/admin/audit-log", requester.token)).status).toBe(403);
+    const page2 = await call("GET", `/admin/audit-log?limit=2&cursor=${r.body.next_cursor ?? ""}`, admin);
+    expect(page2.status).toBe(200);
   });
 });

@@ -57,6 +57,13 @@
       "when": 1792061051164,
       "tag": "0007_audit_immutable_and_rules_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792066486045,
+      "tag": "0008_faz2_attachments_comments",
+      "breakpoints": true
     }
   ]
 }
