@@ -1,12 +1,13 @@
 // Masaüstü arayüzü uçtan uca: giriş, konuşma seçimi, gönderim, okundu, canlı senkronizasyon.
 // Ön koşul: yerel API (apps/api: pnpm dev:local, port 3000) ve Vite (apps/desktop: pnpm dev, port 5173).
-// Chrome yolu CHROME_PATH ile verilir; ekran görüntüleri SHOTS klasörüne yazılır.
+// Chrome yolu CHROME_PATH ile verilir; ekran görüntüleri SHOTS klasörüne (varsayılan: geçici klasör) yazılır.
 import { chromium } from "playwright-core";
+import os from "node:os";
 
 const APP = "http://localhost:5173/";
 const API = "http://localhost:5173/api/v1";
 const CHROME = process.env.CHROME_PATH ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
-const SHOTS = process.env.SHOTS ?? ".";
+const SHOTS = process.env.SHOTS ?? os.tmpdir();
 const results = [];
 const check = (label, ok, extra = "") => {
   results.push({ label, ok });
