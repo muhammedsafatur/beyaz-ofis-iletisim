@@ -634,7 +634,7 @@ paths:
       - { name: departmentId, in: path, required: true, schema: { type: integer } }
     post:
       tags: [AccessRequests]
-      summary: Hedef birim kararı (birim yöneticisi ya da yönetici yoksa sistem yöneticisi meta veriyle)
+      summary: Hedef kararı (patron; patron yoksa sistem yöneticisi meta veriyle). Birim yöneticisi karar veremez.
       requestBody:
         required: true
         content:
@@ -678,9 +678,9 @@ paths:
       - { name: departmentId, in: path, required: true, schema: { type: integer } }
     get:
       tags: [AccessRequests]
-      summary: Hedef birim yöneticisi karar öncesi içeriği okur (K3). Yalnızca o hedefin yöneticisi, hedef pending iken. Her çağrı access_log'a yazılır.
+      summary: Patron karar öncesi içeriği okur (K3). Yalnızca patron, hedef pending iken. Her çağrı access_log'a yazılır.
       description: |
-        Sistem yöneticisi bu uca erişemez (yalnızca meta veri görür). Yönetici yoksa içerik açılmaz.
+        "Yönetici" burada patrondur. Birim yöneticisi ve sistem yöneticisi bu uca erişemez (sistem yöneticisi yalnızca meta veri görür). Patron yoksa içerik açılmaz.
         Kapsam (öneri, onaylanmadı): konuşmanın tamamı görünür.
       responses:
         '200':
@@ -698,7 +698,7 @@ paths:
                     items: { $ref: '#/components/schemas/Message' }
                   has_more: { type: boolean }
         '403':
-          description: Hedefin yöneticisi değil ya da hedef artık pending değil
+          description: Patron değil ya da hedef artık pending değil
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

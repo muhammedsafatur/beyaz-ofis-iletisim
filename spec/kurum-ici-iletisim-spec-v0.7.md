@@ -8,7 +8,7 @@
 
 ## 0b. Değişiklik özeti (v0.6 → v0.7)
 
-- **K3:** Hedef birim yöneticisi karar öncesi içeriği `GET /access-requests/:id/targets/:departmentId/content` ile okur. Sistem yöneticisi bu uca erişemez.
+- **K3:** "Yönetici" burada patrondur, birim yöneticisi değildir. Patron karar öncesi içeriği `GET /access-requests/:id/targets/:departmentId/content` ile okur ve karar verir. Birim yöneticisi ve sistem yöneticisi bu uca erişemez.
 - **K4:** Delta polling için iki ayrı sayaç: `messages.change_seq` (gönderim, düzenleme, silme) ve `conversations.updated_at` (`updated_after`). `seq` boşluksuz kalır.
 
 ## 0. Değişiklik özeti (v0.5 → v0.6)
@@ -174,8 +174,8 @@ Birim ve lokasyon yetkiyi belirlemez. Engelleme yoktur, sessize alma yalnızca b
 
 1. Talep eden konuşmayı, gerekçeyi (zorunlu) ve hedef birim(ler)i seçer. Hedef birimler yalnızca konuşmadaki üyelerin birimleriyle sınırlıdır.
 2. Her hedef birim için ayrı bir onay kaydı oluşur.
-3. Hedef birimin yöneticisi varsa karar onda olur. Yönetici içeriği görür ve karar verir. Yönetici içeriği `GET /access-requests/:id/targets/:departmentId/content` ile okur (K3). Yalnızca o hedefin yöneticisi, hedef `pending` iken erişir. Her okuma `access_log`'a yazılır. Kapsam (öneri, henüz onaylanmadı): konuşmanın tamamı görünür.
-4. Hedef birimin yöneticisi yoksa karar sistem yöneticisindedir. Sistem yöneticisi yalnızca meta veriyi görür: talep eden (ad soyad, birim), konuşma tipi ve adı, üye sayısı, mesaj sayısı, ilk ve son mesaj tarihi, gerekçe, hedef birim.
+3. Hedef için patron varsa karar onda olur. Patron içeriği görür ve karar verir. Patron içeriği `GET /access-requests/:id/targets/:departmentId/content` ile okur (K3). Yalnızca patron, hedef `pending` iken erişir. Birim yöneticisi bu uca erişemez ve bu hedefte karar veremez. Her okuma `access_log`'a yazılır. Kapsam (öneri, henüz onaylanmadı): konuşmanın tamamı görünür.
+4. Hedef için patron yoksa karar sistem yöneticisindedir. Sistem yöneticisi yalnızca meta veriyi görür: talep eden (ad soyad, birim), konuşma tipi ve adı, üye sayısı, mesaj sayısı, ilk ve son mesaj tarihi, gerekçe, hedef birim.
 5. **Tüm hedefler onaylarsa** talep onaylanır. Talep eden, konuşmanın içeriğini `access_expires_at` süresince okur. Kopyalama kapalıdır, her okuma `access_log`'a yazılır.
 6. **Herhangi bir hedef reddederse** talep reddedilir.
 7. Onaylayan ile talep eden aynı kişi olamaz.
@@ -255,7 +255,7 @@ Hedef birimlerden biri onaylamış, diğeri bekliyorsa talep `pending` kalır. O
 
 **Ticket:** `POST /tickets`, `GET /tickets?role=requester|approver`, `GET /tickets/:id`, `PATCH /tickets/:id` (15 dk), `POST /tickets/:id/withdraw`, `POST /tickets/:id/decision`
 
-**Erişim talebi:** `POST /access-requests` (hedef birimler dahil), `GET /access-requests?role=`, `GET /access-requests/:id` (karar verene göre içerik ya da yalnızca meta veri), `POST /access-requests/:id/targets/:departmentId/decision`, `POST /access-requests/:id/withdraw`, `GET /access-requests/:id/targets/:departmentId/content` (K3: yalnızca o hedefin yöneticisi, hedef pending iken, loglanır), `GET /access-requests/:id/content` (yalnızca talep eden, süreli, loglanır)
+**Erişim talebi:** `POST /access-requests` (hedef birimler dahil), `GET /access-requests?role=`, `GET /access-requests/:id` (karar verene göre içerik ya da yalnızca meta veri), `POST /access-requests/:id/targets/:departmentId/decision`, `POST /access-requests/:id/withdraw`, `GET /access-requests/:id/targets/:departmentId/content` (K3: yalnızca patron, hedef pending iken, loglanır), `GET /access-requests/:id/content` (yalnızca talep eden, süreli, loglanır)
 
 **Ön kontrol:** `POST /messages/can-send` (yalnızca UX, karar sunucuda)
 
