@@ -42,6 +42,7 @@ function signAccess(userId: string, secret: string): string {
 }
 
 // Erişim belirtecini doğrular, kullanıcı kimliğini döndürür.
+// Erişim belirteci gerçek saate göre doğrulanır (süre kontrolü ctx.now'a bağlı değildir).
 export function verifyAccess(token: string, secret: string): string {
   try {
     const payload = jwt.verify(token, secret);

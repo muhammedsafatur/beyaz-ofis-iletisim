@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import jwt from "jsonwebtoken";
 import { users } from "@beyaz-ofis/db-schema";
 import { buildApp, type AppOptions } from "./app.js";
 import { createTestDb, type Db } from "./db.js";
@@ -998,7 +999,12 @@ describe("anma, push ve tarama (kararlar)", () => {
 
   it("çevrimdışı üye ve anılan kişi push alır; çevrimiçi üye almaz; içerik gönderilmez", async () => {
     const sent: any[] = [];
-    ctx.push = { send: async (msgs) => void sent.push(...msgs) };
+    ctx.push = {
+      send: async (msgs) => {
+        sent.push(...msgs);
+        return [];
+      },
+    };
     await call("POST", "/me/push-tokens", d.token, { token: "ExponentPushToken[dddddddd-0001]", platform: "ios" });
     await call("POST", "/me/push-tokens", c.token, { token: "ExponentPushToken[cccccccc-0001]", platform: "ios" });
     const online = await connectInbox(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=${c.token}`);
@@ -1016,7 +1022,36 @@ describe("anma, push ve tarama (kararlar)", () => {
     expect(toC.length).toBe(0);
     expect(JSON.stringify(sent)).not.toContain("gizli içerik");
     online.socket.close();
-    ctx.push = { send: async () => undefined };
+    ctx.push = { send: async () => [] };
+  });
+
+  it("Expo DeviceNotRegistered dönen belirteç silinir; sonraki bildirimde kullanılmaz", async () => {
+    const dead = "ExponentPushToken[eeeeeeee-0001]";
+    await call("POST", "/me/push-tokens", d.token, { token: dead, platform: "ios" });
+    const sent: string[] = [];
+    ctx.push = {
+      send: async (msgs) => {
+        sent.push(...msgs.map((m) => m.to));
+        return msgs.filter((m) => m.to === dead).map((m) => m.to);
+      },
+    };
+    try {
+      const first = await call("POST", `/conversations/${group}/messages`, a.token, { client_message_id: randomUUID(), content: "ilk", mentions: [d.id] });
+      expect(first.status).toBe(201);
+      expect(sent.filter((t) => t === dead).length).toBe(1);
+      const second = await call("POST", `/conversations/${group}/messages`, a.token, { client_message_id: randomUUID(), content: "ikinci", mentions: [d.id] });
+      expect(second.status).toBe(201);
+      expect(sent.filter((t) => t === dead).length).toBe(1);
+    } finally {
+      ctx.push = { send: async () => [] };
+    }
+  });
+
+  it("süresi geçmiş erişim belirteci TOKEN_EXPIRED ile reddedilir", async () => {
+    const expired = jwt.sign({ sub: d.id, exp: Math.floor(Date.now() / 1000) - 60 }, ctx.jwtSecret);
+    const r = await call("GET", "/users/me", expired);
+    expect(r.status).toBe(401);
+    expect(r.body.error.code).toBe("TOKEN_EXPIRED");
   });
 
   it("çıkarılan üye membership.changed olayı alır", async () => {
