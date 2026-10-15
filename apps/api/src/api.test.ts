@@ -34,7 +34,7 @@ async function call(method: string, url: string, token?: string, payload?: unkno
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (payload !== undefined) headers["content-type"] = "application/json";
-  const res = await fetch(baseUrl + url, {
+  const res = await fetch(baseUrl + "/api/v1" + url, {
     method,
     headers,
     body: payload !== undefined ? JSON.stringify(payload) : undefined,
@@ -108,10 +108,10 @@ afterAll(async () => {
 });
 
 describe("genel", () => {
-  it("sağlık ucu çalışır", async () => {
-    const r = await call("GET", "/health");
-    expect(r.status).toBe(200);
-    expect(r.body).toEqual({ status: "ok" });
+  it("sağlık ucu kökte çalışır (önek dışında)", async () => {
+    const res = await fetch(baseUrl + "/health");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok" });
   });
 
   it("bilinmeyen yol spec hata biçiminde 404 döner", async () => {

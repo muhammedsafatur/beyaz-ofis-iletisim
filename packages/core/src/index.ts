@@ -1,5 +1,8 @@
-export * from "./domain/roles";
-export * from "./domain/errors";
+export * from "./domain/roles.js";
+export * from "./domain/errors.js";
+export * from "./types.js";
+export * from "./tokens.js";
+export * from "./client.js";
+export * from "./sync.js";
 
-// API istemcisi ve sync motoru sonraki adımda eklenecek.
 export const API_VERSION = "v1";

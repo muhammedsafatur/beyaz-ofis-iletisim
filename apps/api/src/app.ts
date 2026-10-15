@@ -56,6 +56,7 @@ export function buildApp(opts: AppOptions): { app: FastifyInstance; ctx: Ctx } {
   });
 
   app.get("/health", async () => ({ status: "ok" }));
-  registerRoutes(app, ctx);
+  // Spec 9: tüm uçlar /api/v1 altında. Sağlık ucu kökte kalır.
+  app.register(async (scope) => registerRoutes(scope, ctx), { prefix: "/api/v1" });
   return { app, ctx };
 }
