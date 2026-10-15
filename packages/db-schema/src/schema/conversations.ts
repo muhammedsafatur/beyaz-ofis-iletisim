@@ -36,6 +36,10 @@ export const conversations = pgTable(
     lastMessageAt: tstz("last_message_at"),
     // K4: değişiklik sayacı (gönderim, düzenleme, silme). messages.change_seq buradan atanır.
     lastChangeSeq: bigint("last_change_seq", { mode: "number" }).notNull().default(0),
+    // B1: konuşma içi seq sayacı. Gönderimde UPDATE ... SET last_seq = last_seq + 1 RETURNING.
+    lastSeq: bigint("last_seq", { mode: "number" }).notNull().default(0),
+    // B2: birebir konuşma anahtarı, "<küçük_user_id>:<büyük_user_id>:<company_context_id veya 0>". Yalnızca direct tipinde dolu.
+    directKey: text("direct_key"),
     // K4: GET /conversations?updated_after= için. Okundu ve üyelik olaylarında da güncellenir.
     updatedAt: tstz("updated_at").notNull().defaultNow(),
     createdAt: tstz("created_at").notNull().defaultNow(),
@@ -50,6 +54,14 @@ export const conversations = pgTable(
     uniqueIndex("conversations_department_channel_uq")
       .on(t.departmentId)
       .where(sql`${t.type} = 'department' AND ${t.deletedAt} IS NULL`),
+    check(
+      "conversations_direct_key_ck",
+      sql`(${t.type} = 'direct') = (${t.directKey} IS NOT NULL)`,
+    ),
+    // B2: aynı çift ve aynı bağlam için en fazla bir aktif birebir konuşma
+    uniqueIndex("conversations_direct_key_uq")
+      .on(t.directKey)
+      .where(sql`${t.type} = 'direct' AND ${t.deletedAt} IS NULL`),
   ],
 );
 

@@ -154,7 +154,9 @@ export const companyLinks = pgTable(
     foreignKey({ columns: [t.companyLowId], foreignColumns: [companies.companyId] }),
     foreignKey({ columns: [t.companyHighId], foreignColumns: [companies.companyId] }),
     check("company_links_low_lt_high_ck", sql`${t.companyLowId} < ${t.companyHighId}`),
-    // Spec: Benzersiz (company_low_id, company_high_id); partial değil, bkz. BOSLUKLAR.md #4
-    uniqueIndex("company_links_pair_uq").on(t.companyLowId, t.companyHighId),
+    // B6: aynı çift için en fazla bir aktif bağlantı. Kapatılan bağlantı yeniden açılırsa yeni satır oluşur.
+    uniqueIndex("company_links_pair_uq")
+      .on(t.companyLowId, t.companyHighId)
+      .where(sql`${t.revokedAt} IS NULL`),
   ],
 );

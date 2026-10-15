@@ -1,4 +1,5 @@
-import { bigint, index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { bigint, check, index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { deletedAt, tstz } from "./_common";
 import { conversations } from "./conversations";
 import { messageType, revisionType } from "./enums";
@@ -12,9 +13,8 @@ export const messages = pgTable(
     conversationId: uuid("conversation_id")
       .notNull()
       .references(() => conversations.conversationId),
-    senderUserId: uuid("sender_user_id")
-      .notNull()
-      .references(() => users.userId),
+    // B12: sistem mesajında NULL (ör. "Ad Soyad ayrıldı"), text mesajda zorunlu
+    senderUserId: uuid("sender_user_id").references(() => users.userId),
     // Idempotency anahtarı, istemci üretir
     clientMessageId: uuid("client_message_id").notNull(),
     // Konuşma içi sıra; cursor sayfalama before_seq / after_seq
@@ -33,6 +33,9 @@ export const messages = pgTable(
     // Delta polling (after_change_seq) bu index'i kullanır
     uniqueIndex("messages_conversation_change_seq_uq").on(t.conversationId, t.changeSeq),
     uniqueIndex("messages_sender_client_message_uq").on(t.senderUserId, t.clientMessageId),
+    check("messages_sender_ck", sql`(${t.messageType} = 'text') = (${t.senderUserId} IS NOT NULL)`),
+    // Mesaj gönderme hız sınırı (K7): son 1 dakikada gönderenin satırları sayılır
+    index("messages_sender_sent_idx").on(t.senderUserId, t.sentAt),
   ],
 );
 

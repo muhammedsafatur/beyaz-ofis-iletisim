@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   check,
   foreignKey,
@@ -27,8 +28,12 @@ export const accessRequests = pgTable(
     requesterId: uuid("requester_id")
       .notNull()
       .references(() => users.userId),
-    // Asgari uzunluk uygulama katmanında
+    // Asgari uzunluk uygulama katmanında (Ç26: 20 karakter)
     reason: text("reason").notNull(),
+    // Ç25: istemci üretir, tekrar eden istek ikinci talep açmaz
+    clientRequestId: uuid("client_request_id").notNull(),
+    // Ç14: süresi dolan talep yeniden açılınca yeni kayıt, önceki talebe bağlanır
+    reopenedFrom: uuid("reopened_from").references((): AnyPgColumn => accessRequests.requestId),
     status: requestStatus("status").notNull().default("pending"),
     // Onay sonrası süreli erişim (access_window_hours)
     accessExpiresAt: tstz("access_expires_at"),
@@ -39,6 +44,7 @@ export const accessRequests = pgTable(
   },
   (t) => [
     unique("access_requests_id_requester_uq").on(t.requestId, t.requesterId),
+    unique("access_requests_client_request_uq").on(t.requesterId, t.clientRequestId),
     index("access_requests_requester_idx").on(t.requesterId),
     index("access_requests_pending_expires_idx")
       .on(t.expiresAt)

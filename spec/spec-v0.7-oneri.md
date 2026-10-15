@@ -1,7 +1,7 @@
 # Spec v0.7 öneri dokümanı
 
 **Taban:** `kurum-ici-iletisim-spec-v0.6.md` (iş kuralları), `openapi-v1.yaml` (API sözleşmesi), `packages/db-schema/BOSLUKLAR.md`
-**Durum:** Taslak. K3, K4, K5 ve Ç8 karara bağlandı ve uygulandı: `spec/kurum-ici-iletisim-spec-v0.7.md` (kısmi), `openapi-v1.yaml`, `packages/db-schema` (migration `0002_k3_k4_change_seq`, `0003_patron_role`, `0004_k5_single_ticket_decision`). Patron rolü (`users.role = 'executive'`) K3 kararıyla birlikte eklendi. Diğer maddeler açık ve uygulanmadı.
+**Durum:** Tüm maddeler uygulandı (K1–K7, Ç1–Ç28, S1–S2, B1–B15). Kaynak dosyalar: `spec/kurum-ici-iletisim-spec-v0.7.md`, `spec/openapi-v1.yaml`, `packages/db-schema` (migration 0002–0007), `packages/core` (hata kodları). Sapmalar ve kendi seçimlerim §5'te.
 **Kural:** Çelişkide spec kazanır. Spec'te olmayan her kural **öneri** olarak yazıldı ve kabul edilene kadar uygulanmaz.
 
 İşaretler:
@@ -17,38 +17,38 @@
 
 | Konu | Spec bölümü | OpenAPI yolu | İki taraftaki değer | Önerilen çözüm |
 |---|---|---|---|---|
-| Ç1 `company_links` alanları | §3.1, §5.7 | `POST /admin/company-links`, `CompanyLink` | Spec: `company_low_id`, `company_high_id`, `low < high` CHECK. OpenAPI: `company_a_id`, `company_b_id`, sıra serbest. `link_id` tipi spec'te yok, OpenAPI integer, BOSLUKLAR bigint | **Karar bekliyor.** Öneri: istek `company_ids` (iki farklı değer, sıra serbest), sunucu sıralar, yanıt `low`/`high` döner. Bkz. 1.2 |
-| Ç2 Doküman sürümü | Başlık | `info.description` | Spec: v0.6. OpenAPI: "kurum-ici-iletisim-spec-v0.5.md" | **Onay bekliyor (düzeltme).** Açıklama v0.6'ya çekilir |
-| Ç3 Grupta okuyanın kimliği | §7 | `GET /conversations/:id`, `members[].last_read_at` | Spec: "Kimlikler grup görünümünde açılmaz". OpenAPI: her üyenin `last_read_at` değeri döner | **Karar bekliyor.** Bkz. K1 |
-| Ç4 Okundu taneciği ve birebir | §7 | `Conversation.read_summary.read_by_count` | Spec: grupta mesaj bazlı "N kişi okudu", birebirde "karşı taraf okuduysa". OpenAPI: konuşma başına tek tamsayı, birebir için ayrı alan yok (açıklama "okudu mu" diyor, şema sayı) | **Karar bekliyor.** Bkz. K2 |
+| Ç1 `company_links` alanları | §3.1, §5.7 | `POST /admin/company-links`, `CompanyLink` | Spec: `company_low_id`, `company_high_id`, `low < high` CHECK. OpenAPI: `company_a_id`, `company_b_id`, sıra serbest. `link_id` tipi spec'te yok, OpenAPI integer, BOSLUKLAR bigint | **Uygulandı.** Öneri: istek `company_ids` (iki farklı değer, sıra serbest), sunucu sıralar, yanıt `low`/`high` döner. Bkz. 1.2 |
+| Ç2 Doküman sürümü | Başlık | `info.description` | Spec: v0.6. OpenAPI: "kurum-ici-iletisim-spec-v0.5.md" | **Uygulandı (düzeltme).** Açıklama v0.6'ya çekilir |
+| Ç3 Grupta okuyanın kimliği | §7 | `GET /conversations/:id`, `members[].last_read_at` | Spec: "Kimlikler grup görünümünde açılmaz". OpenAPI: her üyenin `last_read_at` değeri döner | **Uygulandı.** Bkz. K1 |
+| Ç4 Okundu taneciği ve birebir | §7 | `Conversation.read_summary.read_by_count` | Spec: grupta mesaj bazlı "N kişi okudu", birebirde "karşı taraf okuduysa". OpenAPI: konuşma başına tek tamsayı, birebir için ayrı alan yok (açıklama "okudu mu" diyor, şema sayı) | **Uygulandı.** Bkz. K2 |
 | Ç5 Karar öncesi içerik | §5.4 adım 3, §9 | `GET /access-requests/:id`, `GET /access-requests/:id/content` | Spec §9: `GET /:id` karar verene göre içerik ya da meta döner. OpenAPI: `GET /:id` yalnızca meta, `/content` yalnızca talep edene | **Uygulandı (K3).** Yeni uç: `/targets/:departmentId/content` |
-| Ç6 Meta veri alanları | §0, §5.4 adım 4 | `AccessRequestSummary.meta` | Spec §5.4: talep edenin birimi, konuşma tipi ve adı, üye sayısı, mesaj sayısı, ilk ve son mesaj, gerekçe, hedef birim. Spec §0 bunu "OpenAPI'deki haliyle kesinleşti" diyor. OpenAPI `meta`da konuşma tipi ve talep edenin birimi yok (`UserSummary` birim taşımıyor). Gerekçe ve hedefler yalnızca detay yanıtında var | **Karar bekliyor.** Öneri: `meta`ya `conversation_type` ve `requester_department_ids` eklenir, §0 cümlesi "§5.4 listesi" olarak düzeltilir |
-| Ç7 Grup oluşturma yetkisi | §3.3, §13 | `POST /conversations` | Spec: kural yok, §13'te konu "kapandı" görünüyor. OpenAPI: "kurum politikasıyla, açık karar, şimdilik herkes" | **Karar bekliyor.** Bkz. 1.3 |
+| Ç6 Meta veri alanları | §0, §5.4 adım 4 | `AccessRequestSummary.meta` | Spec §5.4: talep edenin birimi, konuşma tipi ve adı, üye sayısı, mesaj sayısı, ilk ve son mesaj, gerekçe, hedef birim. Spec §0 bunu "OpenAPI'deki haliyle kesinleşti" diyor. OpenAPI `meta`da konuşma tipi ve talep edenin birimi yok (`UserSummary` birim taşımıyor). Gerekçe ve hedefler yalnızca detay yanıtında var | **Uygulandı.** Öneri: `meta`ya `conversation_type` ve `requester_department_ids` eklenir, §0 cümlesi "§5.4 listesi" olarak düzeltilir |
+| Ç7 Grup oluşturma yetkisi | §3.3, §13 | `POST /conversations` | Spec: kural yok, §13'te konu "kapandı" görünüyor. OpenAPI: "kurum politikasıyla, açık karar, şimdilik herkes" | **Uygulandı.** Bkz. 1.3 |
 | Ç8 Üye ekleme ve çıkarma | §5.6 | `POST` ve `DELETE /conversations/:id/members` | Spec: "yönetici tek tek ekler", hangi yönetici olduğu belirsiz. OpenAPI: eklemede grup kurucusu ya da birim kanalında birim yöneticisi, çıkarmada yetki kuralı yok | **Karar verildi (kullanıcı):** grup kurucusu ve birim yöneticisi. Bkz. 1.3 |
-| Ç9 Birim kanalı | §3.3 | `POST /conversations` | Spec: `department` tipi ve birim başına bir aktif kanal. OpenAPI: yalnızca `direct` ve `group` kabul eder, kanal açan uç yok | **Karar bekliyor.** Bkz. 1.3 |
-| Ç10 Hedef birimler | §3.6, §5.4 adım 1 | `POST /access-requests` | Spec: "konuşmadaki üyelerin birimleri". OpenAPI: "konuşmadaki **aktif** üyelerin birimleri" | **Karar bekliyor.** Öneri: ayrılmış üyelerin birimleri de hedef olabilir. Bkz. 1.5 |
-| Ç11 Ticket gövdesi görünürlüğü | §5.5 | `GET /tickets/:id`, `Ticket.body` | Spec: gövde yalnızca birim yöneticisine görünür. OpenAPI: aynı, talep eden `PATCH` ile gövdeyi değiştirebiliyor ama geri okuyamıyor | **Karar bekliyor.** Öneri: gövde talep eden ve hedef birim yöneticisine görünür. Bkz. 1.5 |
-| Ç12 Ticket düzenleme koşulu | §5.5 | `PATCH /tickets/:id` | Spec: açıldıktan sonra 15 dk. OpenAPI: 15 dk ve karar verilmeden önce | **Karar bekliyor.** Öneri: OpenAPI koşulu spec'e eklenir. Bkz. 1.5 |
+| Ç9 Birim kanalı | §3.3 | `POST /conversations` | Spec: `department` tipi ve birim başına bir aktif kanal. OpenAPI: yalnızca `direct` ve `group` kabul eder, kanal açan uç yok | **Uygulandı.** Bkz. 1.3 |
+| Ç10 Hedef birimler | §3.6, §5.4 adım 1 | `POST /access-requests` | Spec: "konuşmadaki üyelerin birimleri". OpenAPI: "konuşmadaki **aktif** üyelerin birimleri" | **Uygulandı.** Öneri: ayrılmış üyelerin birimleri de hedef olabilir. Bkz. 1.5 |
+| Ç11 Ticket gövdesi görünürlüğü | §5.5 | `GET /tickets/:id`, `Ticket.body` | Spec: gövde yalnızca birim yöneticisine görünür. OpenAPI: aynı, talep eden `PATCH` ile gövdeyi değiştirebiliyor ama geri okuyamıyor | **Uygulandı.** Öneri: gövde talep eden ve hedef birim yöneticisine görünür. Bkz. 1.5 |
+| Ç12 Ticket düzenleme koşulu | §5.5 | `PATCH /tickets/:id` | Spec: açıldıktan sonra 15 dk. OpenAPI: 15 dk ve karar verilmeden önce | **Uygulandı.** Öneri: OpenAPI koşulu spec'e eklenir. Bkz. 1.5 |
 | Ç13 Ticket yeniden atama | §5.6 | `POST /admin/users/:id/reassign`, `ticket_ids` | Spec: açık ticket'lar yeniden atanır, ama ticket birime bağlı. OpenAPI: ticket bir kişiye atanıyor gibi okunuyor | **Uygulandı (K5).** Bkz. K5 |
-| Ç14 Süresi dolan talebi yeniden açma | §0a, §5.4 adım 8, §5.5 | Yok | Spec: talep eden isterse yeniden açar (talep ve ticket). OpenAPI: uç yok | **Karar bekliyor.** Bkz. 1.4 |
-| Ç15 `copy_blocked` olayı | §3.6, §5.4 adım 5 | Yok | Spec: `access_log.action` içinde `copy_blocked` var. OpenAPI: istemcinin bu olayı bildireceği uç yok | **Karar bekliyor.** Bkz. 1.4 |
-| Ç16 Kullanıcı oluşturma ve parola | §9, §10 | `POST /admin/users`, `/auth/*` | Spec: argon2id var, ilk parola akışı tanımsız. OpenAPI: "davet e-postası gönderilir" diyor, ama davet kabul ya da parola belirleme ucu yok | **Karar bekliyor.** Bkz. 1.4 |
-| Ç17 Profil güncelleme alanları | §2, §3.2, §9 | `PATCH /users/me` | Spec: `PATCH /users/me` alan listesi vermiyor, ad soyad §3.2'de var. OpenAPI açıklaması "ad, soyad, unvan, profil fotoğrafı" diyor, şema yalnızca `job_title` ve `profile_picture_url` alıyor | **Karar bekliyor.** Öneri: ad soyad yalnızca sistem yöneticisi değiştirir. Şema esas alınır, açıklama düzeltilir |
-| Ç18 Eksik yönetim uçları | §9 | Yok | Spec: şirket, birim, lokasyon, `user_departments`, `user_locations`, `department_managers` CRUD. OpenAPI: yalnızca `GET /companies`, `/departments`, `/locations` ve birim yöneticisi uçları | **Onay bekliyor (düzeltme).** Öneri: `/admin/companies`, `/admin/departments`, `/admin/locations` CRUD eklenir. `user_*` için `PATCH /admin/users/:id` yeterli |
-| Ç19 Yeniden aktifleştirme | §5.6 | Yok | Spec: "yeniden aktif edilince" kuralı var. OpenAPI: uç yok, `PATCH /admin/users/:id` `is_active` almıyor | **Onay bekliyor (düzeltme).** Öneri: `POST /admin/users/:id/activate` |
-| Ç20 Sahipsiz yol | §7 | `/users/{userId}/mute-state` | Spec: sessize alma konuşma bazlı, kullanıcı değiştirir. OpenAPI: yolun hiçbir işlemi yok | **Onay bekliyor (düzeltme).** Yol silinir |
-| Ç21 `decision_basis` değerleri | §3.6 | `AccessRequestTarget.decision_basis` | Spec: yalnızca `'meta'` anılıyor. OpenAPI: `content`, `meta` | **Onay bekliyor (düzeltme).** Spec'e iki değer yazılır, karar verilmeden önce NULL |
-| Ç22 Liste sayfalaması | §9 | `/users`, `/conversations`, `/tickets`, `/access-requests` | Spec: "cursor (`before_seq`, `after_seq`)". OpenAPI: mesaj dışında opak `cursor` | **Onay bekliyor (düzeltme).** Spec: mesajlarda seq, diğer listelerde opak cursor. Offset yok kuralı korunur |
-| Ç23 Mesaj listesi ilk yükleme | §9 | `GET /conversations/:id/messages` | Spec: `before_seq` ve `after_seq` anılıyor, ilk yükleme yok. OpenAPI: ikisi de yoksa davranış tanımsız | **Onay bekliyor (düzeltme).** Öneri: ikisi de yoksa en yeni `limit` mesaj döner |
-| Ç24 Birebir konuşma yanıt kodu | §4 adım 4 | `POST /conversations` | Spec: birebir konuşma varsa kullanılır. OpenAPI: mevcut birebir konuşma da 201 döner | **Onay bekliyor (düzeltme).** Öneri: mevcut konuşma için 200 |
-| Ç25 İdempotency kapsamı | §9 | `POST /tickets`, `POST /access-requests` ve diğer yazmalar | Spec: "yazma işlemleri idempotent". OpenAPI: yalnızca mesajda `client_message_id` var | **Karar bekliyor.** Öneri: ticket ve talep oluşturmaya da istek anahtarı eklenir |
-| Ç26 Erişim talebi gerekçesi | §3.6, §5.4 adım 1 | `POST /access-requests`, `reason` | Spec: asgari uzunluk "uygulama katmanında", sayı yok. OpenAPI: `minLength: 20` | **Karar bekliyor.** Öneri: 20 karakter spec'e yazılır |
-| Ç27 Hız sınırı yanıtı | §11 | `POST /conversations/:id/messages`, `POST /tickets` | Spec: mesaj 60/dk, ticket 20/saat. OpenAPI: 429 yanıtı tanımsız | **Karar bekliyor.** Bkz. K7 |
-| Ç28 Hata kodu kataloğu | §9 | `components.schemas.Error` | Spec: format var, katalog yok. OpenAPI: iki örnek kod | **Karar bekliyor.** Bkz. K6 |
+| Ç14 Süresi dolan talebi yeniden açma | §0a, §5.4 adım 8, §5.5 | Yok | Spec: talep eden isterse yeniden açar (talep ve ticket). OpenAPI: uç yok | **Uygulandı.** Bkz. 1.4 |
+| Ç15 `copy_blocked` olayı | §3.6, §5.4 adım 5 | Yok | Spec: `access_log.action` içinde `copy_blocked` var. OpenAPI: istemcinin bu olayı bildireceği uç yok | **Uygulandı.** Bkz. 1.4 |
+| Ç16 Kullanıcı oluşturma ve parola | §9, §10 | `POST /admin/users`, `/auth/*` | Spec: argon2id var, ilk parola akışı tanımsız. OpenAPI: "davet e-postası gönderilir" diyor, ama davet kabul ya da parola belirleme ucu yok | **Uygulandı.** Bkz. 1.4 |
+| Ç17 Profil güncelleme alanları | §2, §3.2, §9 | `PATCH /users/me` | Spec: `PATCH /users/me` alan listesi vermiyor, ad soyad §3.2'de var. OpenAPI açıklaması "ad, soyad, unvan, profil fotoğrafı" diyor, şema yalnızca `job_title` ve `profile_picture_url` alıyor | **Uygulandı.** Öneri: ad soyad yalnızca sistem yöneticisi değiştirir. Şema esas alınır, açıklama düzeltilir |
+| Ç18 Eksik yönetim uçları | §9 | Yok | Spec: şirket, birim, lokasyon, `user_departments`, `user_locations`, `department_managers` CRUD. OpenAPI: yalnızca `GET /companies`, `/departments`, `/locations` ve birim yöneticisi uçları | **Uygulandı (düzeltme).** Öneri: `/admin/companies`, `/admin/departments`, `/admin/locations` CRUD eklenir. `user_*` için `PATCH /admin/users/:id` yeterli |
+| Ç19 Yeniden aktifleştirme | §5.6 | Yok | Spec: "yeniden aktif edilince" kuralı var. OpenAPI: uç yok, `PATCH /admin/users/:id` `is_active` almıyor | **Uygulandı (düzeltme).** Öneri: `POST /admin/users/:id/activate` |
+| Ç20 Sahipsiz yol | §7 | `/users/{userId}/mute-state` | Spec: sessize alma konuşma bazlı, kullanıcı değiştirir. OpenAPI: yolun hiçbir işlemi yok | **Uygulandı (düzeltme).** Yol silinir |
+| Ç21 `decision_basis` değerleri | §3.6 | `AccessRequestTarget.decision_basis` | Spec: yalnızca `'meta'` anılıyor. OpenAPI: `content`, `meta` | **Uygulandı (düzeltme).** Spec'e iki değer yazılır, karar verilmeden önce NULL |
+| Ç22 Liste sayfalaması | §9 | `/users`, `/conversations`, `/tickets`, `/access-requests` | Spec: "cursor (`before_seq`, `after_seq`)". OpenAPI: mesaj dışında opak `cursor` | **Uygulandı (düzeltme).** Spec: mesajlarda seq, diğer listelerde opak cursor. Offset yok kuralı korunur |
+| Ç23 Mesaj listesi ilk yükleme | §9 | `GET /conversations/:id/messages` | Spec: `before_seq` ve `after_seq` anılıyor, ilk yükleme yok. OpenAPI: ikisi de yoksa davranış tanımsız | **Uygulandı (düzeltme).** Öneri: ikisi de yoksa en yeni `limit` mesaj döner |
+| Ç24 Birebir konuşma yanıt kodu | §4 adım 4 | `POST /conversations` | Spec: birebir konuşma varsa kullanılır. OpenAPI: mevcut birebir konuşma da 201 döner | **Uygulandı (düzeltme).** Öneri: mevcut konuşma için 200 |
+| Ç25 İdempotency kapsamı | §9 | `POST /tickets`, `POST /access-requests` ve diğer yazmalar | Spec: "yazma işlemleri idempotent". OpenAPI: yalnızca mesajda `client_message_id` var | **Uygulandı.** Öneri: ticket ve talep oluşturmaya da istek anahtarı eklenir |
+| Ç26 Erişim talebi gerekçesi | §3.6, §5.4 adım 1 | `POST /access-requests`, `reason` | Spec: asgari uzunluk "uygulama katmanında", sayı yok. OpenAPI: `minLength: 20` | **Uygulandı.** Öneri: 20 karakter spec'e yazılır |
+| Ç27 Hız sınırı yanıtı | §11 | `POST /conversations/:id/messages`, `POST /tickets` | Spec: mesaj 60/dk, ticket 20/saat. OpenAPI: 429 yanıtı tanımsız | **Uygulandı.** Bkz. K7 |
+| Ç28 Hata kodu kataloğu | §9 | `components.schemas.Error` | Spec: format var, katalog yok. OpenAPI: iki örnek kod | **Uygulandı.** Bkz. K6 |
 
 Spec içi tutarsızlıklar (OpenAPI dışı):
-- **S1 (Onay bekliyor, düzeltme):** §1 "Tek instance PostgreSQL ve WebSocket" diyor. §10 ve §12 Faz 1'i polling, WebSocket'i Faz 2 olarak tanımlıyor. Öneri: §1 "Faz 1 polling, Faz 2 WebSocket" olarak hizalanır.
-- **S2 (Karar bekliyor):** §10 "Express veya Fastify" diyor. Tek seçim proje kararıdır. Öneri: Fastify, gerekçe proje tercihiyle doğrulanmalı.
+- **S1 (uygulandı):** §1 "Tek instance PostgreSQL ve WebSocket" diyor. §10 ve §12 Faz 1'i polling, WebSocket'i Faz 2 olarak tanımlıyor. Öneri: §1 "Faz 1 polling, Faz 2 WebSocket" olarak hizalanır.
+- **S2 (uygulandı):** §10 "Express veya Fastify" diyor. Tek seçim proje kararıdır. Öneri: Fastify, gerekçe proje tercihiyle doğrulanmalı.
 
 ### 1.2 Ç1: `company_links` alanları
 
@@ -60,7 +60,7 @@ Spec içi tutarsızlıklar (OpenAPI dışı):
 
 **Önerilen: B.** Gerekçe: sıralama kuralı spec'in veri kuralıdır, istemciye taşınmamalı. Yanıtta low/high kalınca şema, OpenAPI ve `packages/core` tipleri aynı adı kullanır.
 Etkilenen: §3.1 (değişmez), OpenAPI `POST /admin/company-links`, `CompanyLink`.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### 1.3 Ç7, Ç8, Ç9: konuşma yönetim yetkileri
 
@@ -73,7 +73,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 | A | Her aktif çalışan grup oluşturabilir. Eklenen her üye için `canMessage` geçmelidir | Yeni yetki katmanı eklemez. Şirketler arası sızıntı aynı kuralla engellenir |
 | B | Yalnızca sistem yöneticisi | Kontrol sıkı, ama günlük kullanımda yönetici darboğazı olur |
 
-**Önerilen: A.** **Karar bekliyor.**
+**Önerilen: A.** **Uygulandı.**
 
 **Üye ekleme ve çıkarma (Ç8)**
 
@@ -91,7 +91,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 | A | Birim oluşturulunca kanal otomatik açılır | Ek uç yok. Kanal istenmeyen birimde boş kanal kalır |
 | B | `POST /admin/departments/:id/channel` ile sistem yöneticisi açar | Açık kontrol. Bir uç ve bir ekran daha |
 
-**Önerilen: B.** Gerekçe: §3.3 kanal üyeliğini birim üyeliğinden bağımsız tutuyor. Otomatik açma bu bağımsızlığa ters bir varsayılan getirir. **Karar bekliyor.**
+**Önerilen: B.** Gerekçe: §3.3 kanal üyeliğini birim üyeliğinden bağımsız tutuyor. Otomatik açma bu bağımsızlığa ters bir varsayılan getirir. **Uygulandı.**
 
 ### 1.4 Ç14, Ç15, Ç16
 
@@ -102,7 +102,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 | A | Yeniden açma yeni kayıt oluşturur. İsteğe `reopened_from` (nullable) eklenir | Durum makinesi basit kalır, `expired` son durumdur. Maliyet: bir kolon |
 | B | `POST /{id}/reopen`: aynı kayıt `pending`'e döner, `expires_at` yenilenir | Tek kayıt. Ama `expired` geri alınır ve karar geçmişi karışır |
 
-**Önerilen: A.** **Karar bekliyor.**
+**Önerilen: A.** **Uygulandı.**
 
 **Ç15: `copy_blocked` olayı**
 
@@ -111,7 +111,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 | A | `POST /access-requests/:id/events` ile `{ type: "copy_blocked" }`. Sunucu `access_log`'a yazar (öneri: istemci başına hız sınırı) | Kayıt tamam. İstemci beyanına dayanır, sahte ya da eksik olabilir |
 | B | `copy_blocked` enum'dan çıkarılır, yalnızca `read` loglanır | Basit. Kopyalama denemesinin izi kaybolur |
 
-**Önerilen: A.** Gerekçe: enum değeri spec'te var, kaldırmak iş kuralını değiştirir. Kaydın istemci beyanı olduğu spec'e not düşülür. **Karar bekliyor.**
+**Önerilen: A.** Gerekçe: enum değeri spec'te var, kaldırmak iş kuralını değiştirir. Kaydın istemci beyanı olduğu spec'e not düşülür. **Uygulandı.**
 
 **Ç16: kullanıcı oluşturma ve ilk parola**
 
@@ -120,7 +120,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 | A | Davet akışı: tek kullanımlık, süreli, hash'li token e-postayla gider, `POST /auth/accept-invite` ile parola belirlenir. `invitations` tablosu gerekir | En güvenli. E-posta altyapısı ve iki uç gerekir |
 | B | Sistem yöneticisi geçici parola belirler, ilk girişte değişim zorunlu | E-posta gerekmez. Yönetici geçici parolayı bilir, kanal dışı iletim gerekir |
 
-**Önerilen: A.** Gerekçe: §2 sistem yöneticisini içerikten ayırıyor. Parolayı bilmesi, kullanıcı adına giriş yapabilmesi demektir. B, e-posta altyapısı yoksa geçici çözüm olabilir. **Karar bekliyor.**
+**Önerilen: A.** Gerekçe: §2 sistem yöneticisini içerikten ayırıyor. Parolayı bilmesi, kullanıcı adına giriş yapabilmesi demektir. B, e-posta altyapısı yoksa geçici çözüm olabilir. **Uygulandı.**
 
 ### 1.5 Karar gerektiren diğer çelişkiler
 
@@ -146,7 +146,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 
 **Önerilen: A.** Gerekçe: §7'yi sunucuda uygular, üye listesi bozulmaz. Policy test paketine "grupta başka üyenin `last_read_at` değeri dönmez" testi eklenir.
 Etkilenen: §7 (metin netleşir), §9; OpenAPI `Conversation`.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### K2. Okundu bilgisi mesaj bazlı mı, konuşma bazlı mı
 
@@ -161,7 +161,7 @@ Etkilenen: §7 (metin netleşir), §9; OpenAPI `Conversation`.
 **Önerilen: A.** Gerekçe: spec'in ilk cümlesini değiştirmeden uygular. C daha kesin ama şema ve spec değişikliği ister, ihtiyaç doğarsa sonradan eklenebilir.
 Açık not: `POST /read` gövdesiz olduğu için ekranda görülmemiş mesajlar da okunmuş sayılır. Bu, §7'nin "kesin değildir" takasının parçasıdır.
 Etkilenen: §7, §9; OpenAPI `Message`, `Conversation.read_summary` (kaldırılır ya da `read_by_peer`'e dönüşür).
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### K3. Birim yöneticisi karar öncesi içeriği göremiyor
 
@@ -231,7 +231,7 @@ Etkilenen: §5.6, §3.5; OpenAPI `POST /admin/users/:id/reassign`.
 
 Öneri (spec'te yok): konuşmanın varlığını üyelik dışındaki kullanıcıdan saklamak için üye olmayana `NOT_FOUND` (404) dönülür. `FORBIDDEN_NOT_MEMBER` yalnızca erişimi reddedilen ama var olduğu bilinen kayıtlar için kullanılır. Bu bir bilgi ifşa kararıdır.
 Etkilenen: §9; OpenAPI `components.schemas.Error` ve tüm yanıtlar.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### K7. Mesaj ve ticket hız sınırı için 429 tanımlı değil
 
@@ -248,7 +248,7 @@ Yanıt sözleşmesi (öneri): HTTP 429, `Retry-After` (saniye), gövde `{ error:
 **Önerilen: A.** Gerekçe: sınır zaten kalıcı satırlardan türetilebiliyor, yeni altyapı gerektirmiyor. 40-50 kullanıcıda sorgu maliyeti ihmal edilebilir.
 Öneri (spec'te yok): aynı `client_message_id` ile tekrar gelen istek sayılmaz (yeni satır oluşmaz). Düzenleme ve silme sayılmaz. Sistem mesajları sayılmaz. Silinmiş ama satırı kalan mesajlar sayılır, aksi halde silme ile sınır aşılabilir.
 Etkilenen: §11; OpenAPI iki uç ve `components.responses`.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ---
 
@@ -266,7 +266,7 @@ Etkilenen: §11; OpenAPI iki uç ve `components.responses`.
 
 **Önerilen: A.** Gerekçe: tek satır kilidi, tek konuşma içinde sırayı garanti eder. K4'teki `change_seq` için ayrı sayaç kullanılır, aksi halde `seq`'te boşluk oluşur.
 Etkilenen: §3.3, §3.4, §4 adım 6.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### B2. Birebir konuşma tekilliği (BOSLUKLAR A7)
 
@@ -280,7 +280,7 @@ Etkilenen: §3.3, §3.4, §4 adım 6.
 
 **Önerilen: A.** Gerekçe: §3.1-3.3'teki partial index kullanımıyla aynı desen. Garanti DB'de olur.
 Etkilenen: §3.3, §4, §5.3.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### B3. `approval_rules` ve `audit_log` kolonları (BOSLUKLAR A1, A2)
 
@@ -305,7 +305,7 @@ Etkilenen: §3.3, §4, §5.3.
 **Önerilen: A.** `before` ve `after` içinde `password_hash`, mesaj içeriği ve ticket gövdesi yer almaz (§11). Bu kod düzeyinde allowlist ile sağlanır. Değiştirilemezlik trigger'ı (`0001_immutable_logs.sql`) tabloya bağlanır.
 Öneri (spec'te yok): `approval_rules` değişiklikleri `audit_log`'a yazılır.
 Etkilenen: §3.6, §10, §11.
-**Karar bekliyor (iki alt karar).**
+**Uygulandı (iki alt karar).**
 
 ### B4. Refresh token tablosu ve oturum kapatma (BOSLUKLAR A3)
 
@@ -331,7 +331,7 @@ Tablo (öneri): `refresh_tokens`: `token_id` uuid PK, `user_id`, `token_hash` (u
 Öneri (spec'te yok): access token 15 dakika, refresh token 30 gün, `approval_rules` dışında yapılandırma olarak tutulur.
 Logout (öneri): `POST /auth/logout` gövdesine `refresh_token` eklenir, yalnızca o aile kapanır. Tüm cihazlardan çıkış ayrı uç olarak önerilir.
 Etkilenen: §10, §11; OpenAPI `/auth/*`.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### B5. Ticket düzenleme geçmişi (BOSLUKLAR A6)
 
@@ -345,7 +345,7 @@ Etkilenen: §10, §11; OpenAPI `/auth/*`.
 **Önerilen: A.** Gerekçe: karar veren, kararını etkileyen değişikliği görebilmeli. İşaret tek başına neyin değiştiğini söylemez. Öneri: talep eden geçmişi görmez (`message_revisions` ile aynı).
 Ç12 kabul edilirse (karar sonrası düzenleme yok) geçmiş yalnızca karar öncesi değişiklikleri içerir.
 Etkilenen: §3.5, §5.5; OpenAPI `Ticket`.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### B6. `company_links` yeniden açma (BOSLUKLAR A4)
 
@@ -358,18 +358,18 @@ Etkilenen: §3.5, §5.5; OpenAPI `Ticket`.
 
 **Önerilen: A.** Gerekçe: satır değiştirilirse eski bağlama referans veren kayıtların anlamı kayar. Spec §3.1'e önerilen cümle: "Aynı çift için en fazla bir aktif bağlantı olur. Kapatılan bağlantı yeniden açılırsa yeni kayıt oluşur."
 Etkilenen: §3.1, §5.7; OpenAPI `/admin/company-links`.
-**Karar bekliyor.**
+**Uygulandı.**
 
 ### 3.7 BOSLUKLAR.md'deki diğer maddeler
 
 | # | Konu | Öneri | Durum |
 |---|---|---|---|
-| 8-9 | `link_id`, `revision_id`, `decision_id`, `log_id` tipleri | Öneri: bigint identity. OpenAPI `link_id` integer ile uyumlu hale getirilir. `request_id` ve `ticket_id` uuid kalır | Onay bekliyor (düzeltme) |
-| 11 | `access_log.request_id` NOT NULL | Öneri: NOT NULL kalır, spec'e "her `access_log` kaydı bir talebe bağlıdır" yazılır | Karar bekliyor |
-| 12 | Sistem mesajının gönderen alanı | Öneri: `sender_user_id` yalnızca `text` mesajda zorunlu, `system` mesajda NULL. "Ad Soyad ayrıldı" mesajı sistem tarafından yazılır | Karar bekliyor |
-| 13 | Email büyük/küçük harf | Öneri: `lower(email)` üzerinde partial unique. Spec bu konuda tanımsız | Karar bekliyor |
+| 8-9 | `link_id`, `revision_id`, `decision_id`, `log_id` tipleri | Öneri: bigint identity. OpenAPI `link_id` integer ile uyumlu hale getirilir. `request_id` ve `ticket_id` uuid kalır | Uygulandı |
+| 11 | `access_log.request_id` NOT NULL | Öneri: NOT NULL kalır, spec'e "her `access_log` kaydı bir talebe bağlıdır" yazılır | Uygulandı |
+| 12 | Sistem mesajının gönderen alanı | Öneri: `sender_user_id` yalnızca `text` mesajda zorunlu, `system` mesajda NULL. "Ad Soyad ayrıldı" mesajı sistem tarafından yazılır | Uygulandı |
+| 13 | Email büyük/küçük harf | Öneri: `lower(email)` üzerinde partial unique. Spec bu konuda tanımsız | Uygulandı |
 | 14 | `ticket_decisions` tekilliği | ticket başına tek karar, `ticket_id` üzerinde unique (K5) | Uygulandı (migration 0004) |
-| 15 | `locations.city`, `address` | OpenAPI non-null, şema nullable. Öneri: nullable | Onay bekliyor (düzeltme) |
+| 15 | `locations.city`, `address` | OpenAPI non-null, şema nullable. Öneri: nullable | Uygulandı |
 
 Teknik not (spec dışı, BOSLUKLAR C): `decided_by <> requester_id` kısıtı için `requester_id` kopyası ve bileşik FK kullanılıyor. Bu bir uygulama kararıdır, spec'e girmez.
 
@@ -379,52 +379,74 @@ Teknik not (spec dışı, BOSLUKLAR C): `decided_by <> requester_id` kısıtı i
 
 | Madde | Önerilen seçenek | Etkilenen spec bölümü | Durum |
 |---|---|---|---|
-| K1 Grupta `last_read_at` sızıntısı | A: yalnızca kendi kaydı dolu | §7, §9 | Karar bekliyor |
-| K2 Okundu taneciği | A: mesaj bazlı `read_count` ve `read_by_peer` | §7, §9 | Karar bekliyor |
+| K1 Grupta `last_read_at` sızıntısı | A: yalnızca kendi kaydı dolu | §7, §9 | Uygulandı |
+| K2 Okundu taneciği | A: mesaj bazlı `read_count` ve `read_by_peer` | §7, §9 | Uygulandı |
 | K3 Karar öncesi içerik | A: hedef bazlı içerik ucu, okuyan ve karar veren patron (`users.role = 'executive'`) | §2, §5.4, §5.5, §9 | Uygulandı (spec v0.7, OpenAPI, şema 0003) |
 | K4 Polling delta | A: `change_seq` ayrı sayaçla, konuşma `updated_after` | §3.3, §3.4, §6, §9, §12 | Uygulandı (v0.7 kısmi, OpenAPI, şema 0002) |
 | K5 Ticket yeniden atama | `ticket_ids` kaldırıldı, açık ticket patron havuzunda, ticket başına tek karar | §3.5, §5.6 | Uygulandı (spec v0.7, OpenAPI, migration 0004) |
-| K6 Hata kodu kataloğu | A: kapalı enum | §9 | Karar bekliyor |
-| K7 429 ve hız sayacı | A: DB sayımı, `Retry-After` | §11 | Karar bekliyor |
-| Ç1 `company_links` alanları | B: istek `company_ids`, yanıt low/high | §3.1, §5.7 | Karar bekliyor |
-| Ç6 Meta veri alanları | `conversation_type` ve `requester_department_ids` eklenir | §0, §5.4 | Karar bekliyor |
-| Ç7 Grup oluşturma | A: her aktif çalışan, üyeler `canMessage`'dan geçer | §3.3, §13 | Karar bekliyor |
+| K6 Hata kodu kataloğu | A: kapalı enum | §9 | Uygulandı |
+| K7 429 ve hız sayacı | A: DB sayımı, `Retry-After` | §11 | Uygulandı |
+| Ç1 `company_links` alanları | B: istek `company_ids`, yanıt low/high | §3.1, §5.7 | Uygulandı |
+| Ç6 Meta veri alanları | `conversation_type` ve `requester_department_ids` eklenir | §0, §5.4 | Uygulandı |
+| Ç7 Grup oluşturma | A: her aktif çalışan, üyeler `canMessage`'dan geçer | §3.3, §13 | Uygulandı |
 | Ç8 Üye ekleme ve çıkarma | Grup kurucusu, birim kanalında birim yöneticisi (ekleme `canMessage` ile) | §5.6 | Karar verildi (kullanıcı) |
-| Ç9 Birim kanalı | B: sistem yöneticisi ucu | §3.3, §9 | Karar bekliyor |
-| Ç10 Hedef birimler | Ayrılmış üyelerin birimleri de hedef | §3.6, §5.4 | Karar bekliyor |
-| Ç11 Ticket gövdesi görünürlüğü | Talep eden ve birim yöneticisi | §5.5 | Karar bekliyor |
-| Ç12 Ticket düzenleme koşulu | Karar verilmeden önce şartı spec'e eklenir | §5.5 | Karar bekliyor |
-| Ç14 Yeniden açma | A: yeni kayıt, `reopened_from` | §0a, §3.5, §3.6, §5.4, §5.5 | Karar bekliyor |
-| Ç15 `copy_blocked` | A: istemci olay ucu | §3.6, §5.4, §9 | Karar bekliyor |
-| Ç16 Kullanıcı oluşturma ve parola | A: davet akışı | §9, §10 | Karar bekliyor |
-| Ç17 Profil alanları | Ad soyad yalnızca sistem yöneticisi | §2, §3.2, §9 | Karar bekliyor |
-| Ç25 İdempotency kapsamı | Ticket ve talepte istek anahtarı | §9 | Karar bekliyor |
-| Ç26 Gerekçe uzunluğu | 20 karakter spec'e yazılır | §3.6, §5.4 | Karar bekliyor |
-| S2 Sunucu framework'ü | Fastify (proje tercihiyle doğrulanır) | §10 | Karar bekliyor |
-| B1 `seq` üretimi | A: `conversations.last_seq` | §3.3, §3.4, §4 | Karar bekliyor |
-| B2 Birebir konuşma tekilliği | A: `direct_key` partial unique | §3.3, §4, §5.3 | Karar bekliyor |
-| B3 `approval_rules` ve `audit_log` | B: tek satır (approval_rules); A: tek tablo (audit_log) | §3.6, §10, §11 | Karar bekliyor |
-| B4 Refresh token ve oturum kapatma | A ve C: aile iptali, istek başına aktiflik | §10, §11 | Karar bekliyor |
-| B5 Ticket düzenleme geçmişi | A: `ticket_revisions` | §3.5, §5.5 | Karar bekliyor |
-| B6 `company_links` yeniden açma | A: partial unique, yeni satır | §3.1, §5.7 | Karar bekliyor |
-| B11 `access_log.request_id` | NOT NULL kalır | §3.6 | Karar bekliyor |
-| B12 Sistem mesajının gönderen alanı | `system` mesajda `sender_user_id` NULL | §3.4, §5.6 | Karar bekliyor |
-| B13 Email büyük/küçük harf | `lower(email)` partial unique | §3.2 | Karar bekliyor |
-| Ç2 Doküman sürümü | Açıklama v0.6'ya çekilir | Başlık | Onay bekliyor (düzeltme) |
-| Ç18 Eksik yönetim uçları | CRUD uçları OpenAPI'ye eklenir | §9 | Onay bekliyor (düzeltme) |
-| Ç19 Yeniden aktifleştirme | `POST /admin/users/:id/activate` | §5.6 | Onay bekliyor (düzeltme) |
-| Ç20 Sahipsiz yol | `/users/{userId}/mute-state` silinir | §7 | Onay bekliyor (düzeltme) |
-| Ç21 `decision_basis` | Spec'e `content` ve `meta` yazılır | §3.6 | Onay bekliyor (düzeltme) |
-| Ç22 Liste sayfalaması | Mesajda seq, diğerlerinde opak cursor | §9 | Onay bekliyor (düzeltme) |
-| Ç23 Mesaj ilk yükleme | İkisi de yoksa en yeni `limit` mesaj | §9 | Onay bekliyor (düzeltme) |
-| Ç24 Birebir konuşma yanıt kodu | Mevcut için 200 | §4, §9 | Onay bekliyor (düzeltme) |
-| S1 Tek instance ve WebSocket ifadesi | "Faz 1 polling, Faz 2 WebSocket" | §1, §10 | Onay bekliyor (düzeltme) |
-| B8-9 ID tipleri | bigint identity, OpenAPI integer ile hizalanır | §3.1, §3.4-3.6 | Onay bekliyor (düzeltme) |
-| B15 `locations` alanları | `city`, `address` nullable | §3.1 | Onay bekliyor (düzeltme) |
+| Ç9 Birim kanalı | B: sistem yöneticisi ucu | §3.3, §9 | Uygulandı |
+| Ç10 Hedef birimler | Ayrılmış üyelerin birimleri de hedef | §3.6, §5.4 | Uygulandı |
+| Ç11 Ticket gövdesi görünürlüğü | Talep eden ve birim yöneticisi | §5.5 | Uygulandı |
+| Ç12 Ticket düzenleme koşulu | Karar verilmeden önce şartı spec'e eklenir | §5.5 | Uygulandı |
+| Ç14 Yeniden açma | A: yeni kayıt, `reopened_from` | §0a, §3.5, §3.6, §5.4, §5.5 | Uygulandı |
+| Ç15 `copy_blocked` | A: istemci olay ucu | §3.6, §5.4, §9 | Uygulandı |
+| Ç16 Kullanıcı oluşturma ve parola | A: davet akışı | §9, §10 | Uygulandı |
+| Ç17 Profil alanları | Ad soyad yalnızca sistem yöneticisi | §2, §3.2, §9 | Uygulandı |
+| Ç25 İdempotency kapsamı | Ticket ve talepte istek anahtarı | §9 | Uygulandı |
+| Ç26 Gerekçe uzunluğu | 20 karakter spec'e yazılır | §3.6, §5.4 | Uygulandı |
+| S2 Sunucu framework'ü | Fastify (proje tercihiyle doğrulanır) | §10 | Uygulandı |
+| B1 `seq` üretimi | A: `conversations.last_seq` | §3.3, §3.4, §4 | Uygulandı |
+| B2 Birebir konuşma tekilliği | A: `direct_key` partial unique | §3.3, §4, §5.3 | Uygulandı |
+| B3 `approval_rules` ve `audit_log` | B: tek satır (approval_rules); A: tek tablo (audit_log) | §3.6, §10, §11 | Uygulandı |
+| B4 Refresh token ve oturum kapatma | A ve C: aile iptali, istek başına aktiflik | §10, §11 | Uygulandı |
+| B5 Ticket düzenleme geçmişi | A: `ticket_revisions` | §3.5, §5.5 | Uygulandı |
+| B6 `company_links` yeniden açma | A: partial unique, yeni satır | §3.1, §5.7 | Uygulandı |
+| B11 `access_log.request_id` | NOT NULL kalır | §3.6 | Uygulandı |
+| B12 Sistem mesajının gönderen alanı | `system` mesajda `sender_user_id` NULL | §3.4, §5.6 | Uygulandı |
+| B13 Email büyük/küçük harf | `lower(email)` partial unique | §3.2 | Uygulandı |
+| Ç2 Doküman sürümü | Açıklama v0.6'ya çekilir | Başlık | Uygulandı |
+| Ç18 Eksik yönetim uçları | CRUD uçları OpenAPI'ye eklenir | §9 | Uygulandı |
+| Ç19 Yeniden aktifleştirme | `POST /admin/users/:id/activate` | §5.6 | Uygulandı |
+| Ç20 Sahipsiz yol | `/users/{userId}/mute-state` silinir | §7 | Uygulandı |
+| Ç21 `decision_basis` | Spec'e `content` ve `meta` yazılır | §3.6 | Uygulandı |
+| Ç22 Liste sayfalaması | Mesajda seq, diğerlerinde opak cursor | §9 | Uygulandı |
+| Ç23 Mesaj ilk yükleme | İkisi de yoksa en yeni `limit` mesaj | §9 | Uygulandı |
+| Ç24 Birebir konuşma yanıt kodu | Mevcut için 200 | §4, §9 | Uygulandı |
+| S1 Tek instance ve WebSocket ifadesi | "Faz 1 polling, Faz 2 WebSocket" | §1, §10 | Uygulandı |
+| B8-9 ID tipleri | bigint identity, OpenAPI integer ile hizalanır | §3.1, §3.4-3.6 | Uygulandı |
+| B15 `locations` alanları | `city`, `address` nullable | §3.1 | Uygulandı |
 
-**Karar bekleyen madde sayısı: 27.** Onay bekleyen düzeltme: 11. Ç3, Ç4, Ç5, Ç13, Ç27, Ç28 ilgili K maddesinde karara bağlanır, ayrıca sayılmaz. B14 K5'e bağlıdır, ayrıca sayılmaz.
+**Karar bekleyen madde sayısı: 0.** Tüm maddeler uygulandı (bkz. §5). Onay bekleyen düzeltme: 0. Ç3, Ç4, Ç5, Ç13, Ç27, Ç28 ilgili K maddesinde karara bağlanır, ayrıca sayılmaz. B14 K5'e bağlıdır, ayrıca sayılmaz.
 
 **Spec'e en çok etki eden 3 madde:**
 1. **K4 polling delta:** veri modeli (§3.3, §3.4), düzenleme akışı (§6), API (§9) ve Faz 1 kapsamı (§12) etkilenir. B1 kararına bağlıdır.
 2. **K3 karar öncesi içerik:** §2 yetki ayrımının uç düzeyinde uygulanması, erişim talebi akışı (§5.4) ve `access_log` kapsamı değişir.
 3. **K1 ve K2 okundu bilgisi:** gizlilik kuralı (§7), mesaj yanıt şekli (§9) ve birebir gösterim değişir. Ç4 ve Ç5 bu iki maddeye bağlıdır.
+
+---
+
+## 5. Uygulama notları (sapmalar ve kendi seçimlerim)
+
+Kullanıcının "bitir hepsini" talimatıyla her madde için önerilen seçenek uygulandı. Aşağıdakiler önerinin birebir uygulanmadığı ya da önerinin dışına çıkılan noktalardır. Her biri geri alınabilir.
+
+- **Ç2 (doküman sürümü):** Öneri "v0.6" diyordu. OpenAPI açıklaması v0.7'ye çekildi, çünkü v0.7 artık mevcut.
+- **K6 (hata kataloğu):** Öneriye `INVITATION_INVALID` eklendi (Ç16 davet akışı için gerekli). HTTP kodu 400.
+- **B3 (approval_rules aralıkları):** Öneride aralık yoktu. Seçilen aralıklar: istek süresi 1–720 saat, erişim süresi 1–168 saat, mesaj hızı 1–600/dk, ticket hızı 1–200/saat. Varsayılanlar 72, 24, 60, 20.
+- **B4 (token süreleri):** Access token 15 dakika, refresh token 30 gün. Bunlar `approval_rules` dışında, ortam yapılandırmasında tutuluyor.
+- **B2 (direct_key biçimi):** `<küçük_user_id>:<büyük_user_id>:<bağlam veya 0>`. Öneride PostgreSQL 15 `NULLS NOT DISTINCT` yazıyordu. Bunun yerine sabit `0` değeri kullanıldı, böylece PostgreSQL sürümüne bağlı kalınmıyor.
+- **B3 (audit_log):** Öneri tek tabloyu seçti. Ek olarak `audit_log` değiştirilemez (trigger, 0007 migration). `entity_type` ve `action` enum'ları kendi seçimim.
+- **Ç8 alt sorusu (kurucu ayrılırsa):** Yetki grupta kalan en eski aktif üyeye geçer. Bu bir öneriydi, kullanıcı onaylamadı; uygulandı.
+- **K5 ek kararı:** Ticket başına tek karar kısıtı (`ticket_decisions`) ve karar kaydının değiştirilemezliği (0005) önceki adımlardan geliyor.
+- **Ç18 (CRUD uçları):** `POST`, `PATCH` ve `DELETE` (yumuşak silme) eklendi. Ayrı bir `GET /admin/...` listesi eklenmedi, çünkü mevcut `GET /companies`, `/departments`, `/locations` uçları yeterli.
+- **Ç9 (birim kanalı):** Uç `POST /admin/departments/:id/channel`. Birim silinirken kanalın kapatılması OpenAPI açıklamasına eklendi (spec'te yazmıyordu).
+- **B5 (ticket_revisions):** Düzenlemede önceki başlık ve gövde kopyalanır. Talep eden geçmişi görmez, patron görebilir (öneri, sapma yok).
+- **Ç22 (sayfalama):** Mesajlarda `seq`, diğer listelerde opak `cursor`. Mevcut OpenAPI zaten bu şekildeydi.
+- **Migration'lar:** 0006'da mevcut veriler için backfill eklendi (`last_seq`, `direct_key`, `client_request_id`). Drizzle'ın ürettiği SQL, dolu tablolarda NOT NULL hatası verecek haliyle değiştirildi. 0007 `audit_log` trigger'larını ve `approval_rules` tek satırını ekler.
+- **Doğrulama:** Migration zinciri PGlite'ta gerçek veri üzerinde denendi: backfill'ler, kısıtlar, değiştirilemezlik trigger'ları ve tekil indeksler geçti. API uç iş mantığı bu dokümanın kapsamı dışında, henüz yazılmadı.
+- **Kapsam dışında bırakılanlar:** `ticket_revisions` ve `refresh_tokens` için ayrı API uçları yok (talep eden düzenleme geçmişini görmez; token yönetimi `/auth/*` uçlarında). Denetim kaydı ekranı Faz 2'de.

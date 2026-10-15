@@ -20,8 +20,9 @@ export const users = pgTable(
     deletedAt,
   },
   (t) => [
+    // B13: büyük/küçük harf duyarsız, aktif kayıtlar için
     uniqueIndex("users_email_active_uq")
-      .on(t.email)
+      .on(sql`lower(${t.email})`)
       .where(sql`${t.deletedAt} IS NULL`),
   ],
 );

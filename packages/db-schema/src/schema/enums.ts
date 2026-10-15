@@ -35,3 +35,24 @@ export const accessLogAction = pgEnum("access_log_action", [
   "reject",
   "copy_blocked",
 ]);
+
+// §11 audit_log.entity_type ve action (BOSLUKLAR B3)
+export const auditEntityType = pgEnum("audit_entity_type", [
+  "user",
+  "department",
+  "company",
+  "location",
+  "company_link",
+  "department_manager",
+  "approval_rules",
+]);
+export const auditAction = pgEnum("audit_action", [
+  "create",
+  "update",
+  "deactivate",
+  "activate",
+  "delete",
+  "revoke",
+  "assign",
+  "unassign",
+]);
