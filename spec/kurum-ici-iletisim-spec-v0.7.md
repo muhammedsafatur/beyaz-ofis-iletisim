@@ -117,10 +117,11 @@ Düzenleme geçmişi alıcıya gösterilmez. Alıcı yalnızca "düzenlendi" ya 
 
 ### 3.5 Ticket
 
-**tickets**: `ticket_id` (uuid, PK), `requester_id`, `target_department_id` (NOT NULL), `title` (zorunlu), `body` (zorunlu), `status` (enum: `pending`, `approved`, `rejected`, `withdrawn`, `expired`), `created_at`, `updated_at`, `expires_at`, `closed_at`
+**tickets**: `ticket_id` (uuid, PK), `requester_id`, `target_department_id` (NOT NULL, bilgi amaçlı; karar yetkisi birime bağlı değildir, K5), `title` (zorunlu), `body` (zorunlu), `status` (enum: `pending`, `approved`, `rejected`, `withdrawn`, `expired`), `created_at`, `updated_at`, `expires_at`, `closed_at`
 
 **ticket_decisions**: `decision_id` (PK), `ticket_id`, `decided_by`, `decision` (enum: `approved`, `rejected`), `note`, `decided_at`
 - Kısıt: `decided_by <> requester_id`
+- Kısıt: ticket başına en fazla bir karar (`ticket_id` benzersiz, K5)
 
 ### 3.6 Erişim talebi ve denetim
 
@@ -187,7 +188,7 @@ Hedef birimlerden biri onaylamış, diğeri bekliyorsa talep `pending` kalır. O
 
 ### 5.5 Ticket onayı
 
-- Ticket kararı patrondadır. Birim yöneticisi ticket kararı vermez.
+- Ticket kararı kurum genelindeki patron havuzundadır. Birim yöneticisi ticket kararı vermez. Açık ticket yeniden atanmaz (K5).
 - Patron yoksa karar sistem yöneticisindedir.
 - Ticket gövdesi yalnızca patrona görünür. Patron yokken karar veren sistem yöneticisi yalnızca meta veriyi görür: talep eden, hedef birim, başlık, tarih, durum. Ticket konuşma değildir, `access_log` gerektirmez, karar `ticket_decisions`'a yazılır.
 - Talep eden kendi ticket'ını onaylayamaz.
@@ -200,9 +201,9 @@ Hedef birimlerden biri onaylamış, diğeri bekliyorsa talep `pending` kalır. O
 - Hesap pasifleştirilince tüm aktif konuşmalardan `left_at` yazılır, konuşmada "Ad Soyad ayrıldı" sistem mesajı oluşur.
 - Mesajlar silinmez, gönderen olarak ad soyad kalır.
 - Yeniden aktif edilince konuşmalara otomatik eklenmez, yönetici tek tek ekler.
-- Birim yöneticiliği ve açık ticket'lar sistem yöneticisi tarafından yeniden atanır. Atanmayanlar sistem yöneticisi ekranında bekler.
+- Birim yöneticiliği sistem yöneticisi tarafından yeniden atanır. Atanmayan birim yöneticiliği sistem yöneticisi ekranında bekler. Açık ticket'lar yeniden atanmaz: karar patron havuzundadır ve herhangi bir aktif patron karar verir (K5).
 - Birimden çıkarma ile pasifleştirme ayrı olaylardır. Birimden çıkarma kanal üyeliğini kendiliğinden kaldırmaz.
-- Üye ekleme ve çıkarma yetkisi (Ç8, kullanıcı kararı): Grupta grup kurucusundadır (`conversations.created_by`). Birim kanalında birim yöneticisindedir. Eklenen her üye için `canMessage(ekleyen, üye)` geçmelidir. Kurucu ayrılır ya da pasifleşirse yetkinin kime geçeceği karar bekliyor.
+- Üye ekleme ve çıkarma yetkisi (Ç8, kullanıcı kararı): Grupta grup kurucusundadır (`conversations.created_by`). Birim kanalında birim yöneticisindedir. Eklenen her üye için `canMessage(ekleyen, üye)` geçmelidir. Kurucu ayrılır ya da pasifleşirse yetki, grupta kalan aktif üyelerden katılma tarihi en eski olana geçer (öneri, uygulandı).
 
 ### 5.7 Şirketler arası bağlantı
 

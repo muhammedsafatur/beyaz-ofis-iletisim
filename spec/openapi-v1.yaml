@@ -811,7 +811,7 @@ paths:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
     post:
       tags: [Admin]
-      summary: Pasifleşen kişinin yöneticilik ve açık ticket'larını yeniden ata
+      summary: Pasifleşen birim yöneticisinin birim yöneticiliğini yeniden ata (K5). Ticket atanmaz, açık ticket'lar patron havuzunda kalır.
       requestBody:
         required: true
         content:
@@ -824,9 +824,6 @@ paths:
                 department_ids:
                   type: array
                   items: { type: integer }
-                ticket_ids:
-                  type: array
-                  items: { type: string, format: uuid }
       responses:
         '200': { description: Yeniden atandı }
         '403': { $ref: '#/components/responses/Forbidden' }

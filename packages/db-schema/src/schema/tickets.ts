@@ -13,6 +13,7 @@ export const tickets = pgTable(
     requesterId: uuid("requester_id")
       .notNull()
       .references(() => users.userId),
+    // Bilgi amaçlı. Karar yetkisi birime bağlı değildir (K5).
     targetDepartmentId: bigint("target_department_id", { mode: "number" })
       .notNull()
       .references(() => departments.departmentId),
@@ -59,6 +60,7 @@ export const ticketDecisions = pgTable(
       foreignColumns: [tickets.ticketId, tickets.requesterId],
     }),
     check("ticket_decisions_not_self_ck", sql`${t.decidedBy} <> ${t.requesterId}`),
-    index("ticket_decisions_ticket_idx").on(t.ticketId),
+    // K5: ticket başına tek karar. Karar yetkisi patron havuzunda, yeniden atama yok.
+    unique("ticket_decisions_ticket_uq").on(t.ticketId),
   ],
 );

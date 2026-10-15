@@ -1,7 +1,7 @@
 # Spec v0.7 öneri dokümanı
 
 **Taban:** `kurum-ici-iletisim-spec-v0.6.md` (iş kuralları), `openapi-v1.yaml` (API sözleşmesi), `packages/db-schema/BOSLUKLAR.md`
-**Durum:** Taslak. K3 ve K4 karara bağlandı ve uygulandı: `spec/kurum-ici-iletisim-spec-v0.7.md` (kısmi), `openapi-v1.yaml`, `packages/db-schema` (migration `0002_k3_k4_change_seq`). Diğer maddeler açık ve uygulanmadı.
+**Durum:** Taslak. K3, K4, K5 ve Ç8 karara bağlandı ve uygulandı: `spec/kurum-ici-iletisim-spec-v0.7.md` (kısmi), `openapi-v1.yaml`, `packages/db-schema` (migration `0002_k3_k4_change_seq`, `0003_patron_role`, `0004_k5_single_ticket_decision`). Patron rolü (`users.role = 'executive'`) K3 kararıyla birlikte eklendi. Diğer maddeler açık ve uygulanmadı.
 **Kural:** Çelişkide spec kazanır. Spec'te olmayan her kural **öneri** olarak yazıldı ve kabul edilene kadar uygulanmaz.
 
 İşaretler:
@@ -29,7 +29,7 @@
 | Ç10 Hedef birimler | §3.6, §5.4 adım 1 | `POST /access-requests` | Spec: "konuşmadaki üyelerin birimleri". OpenAPI: "konuşmadaki **aktif** üyelerin birimleri" | **Karar bekliyor.** Öneri: ayrılmış üyelerin birimleri de hedef olabilir. Bkz. 1.5 |
 | Ç11 Ticket gövdesi görünürlüğü | §5.5 | `GET /tickets/:id`, `Ticket.body` | Spec: gövde yalnızca birim yöneticisine görünür. OpenAPI: aynı, talep eden `PATCH` ile gövdeyi değiştirebiliyor ama geri okuyamıyor | **Karar bekliyor.** Öneri: gövde talep eden ve hedef birim yöneticisine görünür. Bkz. 1.5 |
 | Ç12 Ticket düzenleme koşulu | §5.5 | `PATCH /tickets/:id` | Spec: açıldıktan sonra 15 dk. OpenAPI: 15 dk ve karar verilmeden önce | **Karar bekliyor.** Öneri: OpenAPI koşulu spec'e eklenir. Bkz. 1.5 |
-| Ç13 Ticket yeniden atama | §5.6 | `POST /admin/users/:id/reassign`, `ticket_ids` | Spec: açık ticket'lar yeniden atanır, ama ticket birime bağlı. OpenAPI: ticket bir kişiye atanıyor gibi okunuyor | **Karar bekliyor.** Bkz. K5 |
+| Ç13 Ticket yeniden atama | §5.6 | `POST /admin/users/:id/reassign`, `ticket_ids` | Spec: açık ticket'lar yeniden atanır, ama ticket birime bağlı. OpenAPI: ticket bir kişiye atanıyor gibi okunuyor | **Uygulandı (K5).** Bkz. K5 |
 | Ç14 Süresi dolan talebi yeniden açma | §0a, §5.4 adım 8, §5.5 | Yok | Spec: talep eden isterse yeniden açar (talep ve ticket). OpenAPI: uç yok | **Karar bekliyor.** Bkz. 1.4 |
 | Ç15 `copy_blocked` olayı | §3.6, §5.4 adım 5 | Yok | Spec: `access_log.action` içinde `copy_blocked` var. OpenAPI: istemcinin bu olayı bildireceği uç yok | **Karar bekliyor.** Bkz. 1.4 |
 | Ç16 Kullanıcı oluşturma ve parola | §9, §10 | `POST /admin/users`, `/auth/*` | Spec: argon2id var, ilk parola akışı tanımsız. OpenAPI: "davet e-postası gönderilir" diyor, ama davet kabul ya da parola belirleme ucu yok | **Karar bekliyor.** Bkz. 1.4 |
@@ -82,7 +82,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 | A | Grupta kurucu, birim kanalında birim yöneticisi ve sistem yöneticisi. Eklenen üye için `canMessage(ekleyen, üye)` geçmelidir | Eklemede kural açık. Açık soru: kurucu ayrılırsa ekleme yetkisi kime geçer |
 | B | Yalnızca sistem yöneticisi | Basit, ama grup kurucusunun işini sistem yöneticisine taşır |
 
-**Karar verildi (kullanıcı):** Grupta grup kurucusu, birim kanalında birim yöneticisi ekler ve çıkarır. Ekleme için `canMessage(ekleyen, üye)` geçmelidir (A'nın parçası). Sistem yöneticisi bu listede yoktur. Açık alt soru: kurucu ayrılır ya da pasifleşirse yetki kime geçer.
+**Karar verildi (kullanıcı):** Grupta grup kurucusu, birim kanalında birim yöneticisi ekler ve çıkarır. Ekleme için `canMessage(ekleyen, üye)` geçmelidir (A'nın parçası). Sistem yöneticisi bu listede yoktur. Kurucu ayrılır ya da pasifleşirse yetki, grupta kalan aktif üyelerden katılma tarihi en eski olana geçer (öneri, uygulandı).
 
 **Birim kanalı (Ç9)**
 
@@ -207,8 +207,8 @@ Etkilenen: §3.3, §3.4, §6, §9, §12; OpenAPI messages, conversations, `Messa
 
 **Önerilen: A.** Gerekçe: spec'in birim ilkesine uyar. Atanacak kişi yoksa ticket birimde bekler, bu da §5.6'daki "atanmayanlar" ifadesiyle uyumlu.
 Etkilenen: §5.6, §3.5; OpenAPI `POST /admin/users/:id/reassign`.
-**Güncel öneri (patron kararından sonra, onaylanmadı):** Ticket kararı artık kurum genelindeki patron havuzunda, birim yöneticisinde değil. Bu nedenle ticket'ı bir kişiye ya da birime bağlamaya gerek kalmadı. Öneri: `ticket_ids` kaldırılır, açık ticket'lar havuzda kalır ve herhangi bir aktif patron karar verir. Patron yoksa §5.5 gereği sistem yöneticisi meta veriyle karar verir, süre dolarsa `expired` olur. `ticket_decisions.ticket_id` üzerinde tekil kısıt eklenir, böylece B14 de kapanır. Birim yöneticisi devri yalnızca `department_managers` kaydını değiştirir.
-**Karar bekliyor.**
+**Uygulandı (kullanıcı: "dediğin gibi yap"):** Ticket kararı artık kurum genelindeki patron havuzunda, birim yöneticisinde değil. Bu nedenle ticket'ı bir kişiye ya da birime bağlamaya gerek kalmadı. Öneri: `ticket_ids` kaldırılır, açık ticket'lar havuzda kalır ve herhangi bir aktif patron karar verir. Patron yoksa §5.5 gereği sistem yöneticisi meta veriyle karar verir, süre dolarsa `expired` olur. `ticket_decisions.ticket_id` üzerinde tekil kısıt eklenir, böylece B14 de kapanır. Birim yöneticisi devri yalnızca `department_managers` kaydını değiştirir.
+**Karar verildi.** Migration `0004_k5_single_ticket_decision`. Gözlem (öneri, uygulanmadı): `ticket_decisions` için spec değiştirilemezlik istemiyor. Karar kaydı UPDATE ile değişebiliyor; `access_log` gibi trigger eklenmesi karar verilirse yapılır.
 
 ### K6. Hata kodu kataloğu tanımlı değil
 
@@ -368,7 +368,7 @@ Etkilenen: §3.1, §5.7; OpenAPI `/admin/company-links`.
 | 11 | `access_log.request_id` NOT NULL | Öneri: NOT NULL kalır, spec'e "her `access_log` kaydı bir talebe bağlıdır" yazılır | Karar bekliyor |
 | 12 | Sistem mesajının gönderen alanı | Öneri: `sender_user_id` yalnızca `text` mesajda zorunlu, `system` mesajda NULL. "Ad Soyad ayrıldı" mesajı sistem tarafından yazılır | Karar bekliyor |
 | 13 | Email büyük/küçük harf | Öneri: `lower(email)` üzerinde partial unique. Spec bu konuda tanımsız | Karar bekliyor |
-| 14 | `ticket_decisions` tekilliği | K5 seçilirse ticket başına tek karar, `ticket_id` üzerinde unique | K5'e bağlı |
+| 14 | `ticket_decisions` tekilliği | ticket başına tek karar, `ticket_id` üzerinde unique (K5) | Uygulandı (migration 0004) |
 | 15 | `locations.city`, `address` | OpenAPI non-null, şema nullable. Öneri: nullable | Onay bekliyor (düzeltme) |
 
 Teknik not (spec dışı, BOSLUKLAR C): `decided_by <> requester_id` kısıtı için `requester_id` kopyası ve bileşik FK kullanılıyor. Bu bir uygulama kararıdır, spec'e girmez.
@@ -383,7 +383,7 @@ Teknik not (spec dışı, BOSLUKLAR C): `decided_by <> requester_id` kısıtı i
 | K2 Okundu taneciği | A: mesaj bazlı `read_count` ve `read_by_peer` | §7, §9 | Karar bekliyor |
 | K3 Karar öncesi içerik | A: hedef bazlı içerik ucu, okuyan ve karar veren patron (`users.role = 'executive'`) | §2, §5.4, §5.5, §9 | Uygulandı (spec v0.7, OpenAPI, şema 0003) |
 | K4 Polling delta | A: `change_seq` ayrı sayaçla, konuşma `updated_after` | §3.3, §3.4, §6, §9, §12 | Uygulandı (v0.7 kısmi, OpenAPI, şema 0002) |
-| K5 Ticket yeniden atama | A: `ticket_ids` kaldırılır, ticket birimi izler | §3.5, §5.6 | Karar bekliyor |
+| K5 Ticket yeniden atama | `ticket_ids` kaldırıldı, açık ticket patron havuzunda, ticket başına tek karar | §3.5, §5.6 | Uygulandı (spec v0.7, OpenAPI, migration 0004) |
 | K6 Hata kodu kataloğu | A: kapalı enum | §9 | Karar bekliyor |
 | K7 429 ve hız sayacı | A: DB sayımı, `Retry-After` | §11 | Karar bekliyor |
 | Ç1 `company_links` alanları | B: istek `company_ids`, yanıt low/high | §3.1, §5.7 | Karar bekliyor |
@@ -422,7 +422,7 @@ Teknik not (spec dışı, BOSLUKLAR C): `decided_by <> requester_id` kısıtı i
 | B8-9 ID tipleri | bigint identity, OpenAPI integer ile hizalanır | §3.1, §3.4-3.6 | Onay bekliyor (düzeltme) |
 | B15 `locations` alanları | `city`, `address` nullable | §3.1 | Onay bekliyor (düzeltme) |
 
-**Karar bekleyen madde sayısı: 29.** Onay bekleyen düzeltme: 11. Ç3, Ç4, Ç5, Ç13, Ç27, Ç28 ilgili K maddesinde karara bağlanır, ayrıca sayılmaz. B14 K5'e bağlıdır, ayrıca sayılmaz.
+**Karar bekleyen madde sayısı: 27.** Onay bekleyen düzeltme: 11. Ç3, Ç4, Ç5, Ç13, Ç27, Ç28 ilgili K maddesinde karara bağlanır, ayrıca sayılmaz. B14 K5'e bağlıdır, ayrıca sayılmaz.
 
 **Spec'e en çok etki eden 3 madde:**
 1. **K4 polling delta:** veri modeli (§3.3, §3.4), düzenleme akışı (§6), API (§9) ve Faz 1 kapsamı (§12) etkilenir. B1 kararına bağlıdır.
