@@ -7,17 +7,24 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "@beyaz-ofis/core": "workspace:*",
     "@beyaz-ofis/db-schema": "workspace:*",
+    "@node-rs/argon2": "^2",
+    "drizzle-orm": "^0.45.4",
     "fastify": "^5.0.0",
+    "jsonwebtoken": "^9",
+    "pg": "^8.13.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5",
     "@types/jest": "29",
+    "@types/jsonwebtoken": "^9",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
     "jest": "29",
     "ts-jest": "29",
     "tsx": "^4.19.0",

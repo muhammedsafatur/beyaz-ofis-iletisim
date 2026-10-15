@@ -876,7 +876,7 @@ paths:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
     patch:
       tags: [Admin]
-      summary: Kullanıcı güncelle (ad soyad, unvan, birim ve lokasyon). Birimler user_departments, lokasyonlar user_locations tablosuna yazılır (Ç18).
+      summary: Kullanıcı güncelle (ad soyad, unvan, rol, birim ve lokasyon). Birimler user_departments, lokasyonlar user_locations tablosuna yazılır (Ç18). Rol yalnızca employee ya da executive olabilir; system_admin API ile verilmez.
       requestBody:
         required: true
         content:
@@ -884,6 +884,7 @@ paths:
             schema:
               type: object
               properties:
+                role: { type: string, enum: [employee, executive] }
                 first_name: { type: string, maxLength: 80 }
                 last_name: { type: string, maxLength: 80 }
                 job_title: { type: string, maxLength: 120 }
@@ -1250,8 +1251,8 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApprovalRules' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422':
-          description: Değer aralık dışında
+        '400':
+          description: Değer aralık dışında (VALIDATION_FAILED)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -1340,6 +1341,7 @@ components:
         - TARGET_NOT_IN_CONVERSATION
         - REASON_TOO_SHORT
         - RATE_LIMITED
+        - INTERNAL_ERROR
 
     Error:
       type: object

@@ -26,5 +26,6 @@ export const ERROR_CODES = [
   "TARGET_NOT_IN_CONVERSATION",
   "REASON_TOO_SHORT",
   "RATE_LIMITED",
+  "INTERNAL_ERROR",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
