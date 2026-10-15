@@ -8,6 +8,8 @@ import { loadActor, type Ctx, type InviteSender } from "./services/common.js";
 import { verifyAccess } from "./services/auth.js";
 import { createRealtime } from "./realtime.js";
 import { createLocalStorage, type FileStorage } from "./storage.js";
+import { noPush, type PushSender } from "./push.js";
+import { noScanner, type Scanner } from "./scanner.js";
 import path from "node:path";
 
 export interface AppOptions {
@@ -16,6 +18,8 @@ export interface AppOptions {
   now?: () => Date;
   invites?: InviteSender;
   files?: FileStorage;
+  push?: PushSender;
+  scanner?: Scanner;
   logger?: boolean;
 }
 
@@ -39,8 +43,16 @@ export function buildApp(opts: AppOptions): { app: FastifyInstance; ctx: Ctx } {
     invites: opts.invites ?? consoleInviteSender,
     realtime: createRealtime(),
     files: opts.files ?? createLocalStorage(path.resolve(process.cwd(), ".data/attachments")),
+    push: opts.push ?? noPush,
+    scanner: opts.scanner ?? noScanner,
   };
-  const app = Fastify({ logger: opts.logger ?? false });
+  // Günlüklerde erişim belirteci görünmez (WebSocket sorgusunda taşınır).
+  const redact = (url: string) => url.replace(/access_token=[^&]*/g, "access_token=[gizli]");
+  const app = Fastify({
+    logger: opts.logger
+      ? { serializers: { req: (req) => ({ method: req.method, url: redact(req.url), remoteAddress: req.socket?.remoteAddress }) } }
+      : false,
+  });
 
   // Tek hata biçimi: { error: { code, message } } (spec 9, K6)
   app.setErrorHandler((err: unknown, req, reply) => {

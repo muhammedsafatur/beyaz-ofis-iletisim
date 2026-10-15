@@ -8,6 +8,7 @@ import * as conv from "./services/conversations.js";
 import * as tickets from "./services/tickets.js";
 import * as reqs from "./services/accessRequests.js";
 import * as att from "./services/attachments.js";
+import * as pushSvc from "./services/pushTokens.js";
 import { loadActor, type Actor, type Ctx } from "./services/common.js";
 import { verifyAccess } from "./services/auth.js";
 
@@ -60,7 +61,10 @@ const msgCreate = z.object({
   client_message_id: uuid,
   content: z.string().min(1).max(4000),
   attachment_id: uuid.optional(),
+  mentions: z.array(uuid).max(20).optional(),
 });
+const pushTokenBody = z.object({ token: z.string().min(10).max(512), platform: z.enum(["ios", "android", "desktop"]) });
+const pushTokenDelete = z.object({ token: z.string().min(10).max(512) });
 const msgEdit = z.object({ content: z.string().min(1).max(4000) });
 const canSendBody = z.object({ target_user_id: uuid, company_context_id: pos.nullable().optional() });
 const ticketQuery = z.object({
@@ -156,6 +160,18 @@ export function registerRoutes(app: FastifyInstance, ctx: Ctx): void {
   };
   const guarded = { preHandler: authenticate };
   const parse = <T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> => schema.parse(value);
+
+  // --- Push belirteçleri (Faz 3) ---
+  app.post("/me/push-tokens", guarded, async (req, reply) => {
+    const body = parse(pushTokenBody, req.body);
+    await pushSvc.registerPushToken(ctx, req.actor, body.token, body.platform);
+    return reply.status(204).send();
+  });
+  app.delete("/me/push-tokens", guarded, async (req, reply) => {
+    const body = parse(pushTokenDelete, req.body);
+    await pushSvc.removePushToken(ctx, req.actor, body.token);
+    return reply.status(204).send();
+  });
 
   // --- Kimlik ---
   app.post("/auth/login", async (req, reply) => {

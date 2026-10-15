@@ -48,6 +48,11 @@ export async function uploadAttachment(
   }
   if (input.data.length === 0) throw new ApiError("VALIDATION_FAILED", "Dosya boş.");
   if (input.data.length > MAX_ATTACHMENT_BYTES) throw new ApiError("VALIDATION_FAILED", "Dosya en fazla 10 MB olabilir.");
+  // Yerel disk + tarama (karar): dosya kaydedilmeden önce taranır.
+  const verdict = await ctx.scanner.scan(input.data).catch(() => {
+    throw new ApiError("INTERNAL_ERROR", "Dosya taraması yapılamadı.");
+  });
+  if (verdict === "infected") throw new ApiError("VALIDATION_FAILED", "Dosya güvenlik taramasından geçemedi.");
   const id = randomUUID();
   await ctx.files.put(id, input.data);
   const [row] = await ctx.db

@@ -64,6 +64,13 @@
       "when": 1792066486045,
       "tag": "0008_faz2_attachments_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792071351920,
+      "tag": "0009_mentions_push_tokens",
+      "breakpoints": true
     }
   ]
 }

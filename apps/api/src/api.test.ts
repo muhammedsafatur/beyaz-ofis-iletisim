@@ -6,9 +6,10 @@ import { createTestDb, type Db } from "./db.js";
 import type { InviteSender, Ctx } from "./services/common.js";
 import { hashPassword } from "./services/auth.js";
 import { expireDue } from "./services/scheduler.js";
-import type { PGlite } from "@electric-sql/pglite";
 import { WebSocket } from "ws";
 import { createMemoryStorage } from "./storage.js";
+import net from "node:net";
+import { clamdScanner } from "./scanner.js";
 
 const SECRET = "test-secret-with-at-least-32-characters";
 const PASSWORD = "parola-123456";
@@ -16,7 +17,7 @@ const HOUR = 3_600_000;
 const MIN = 60_000;
 
 let db: Db;
-let client: PGlite;
+let closeDb: () => Promise<void>;
 let app: FastifyInstance;
 let ctx: Ctx;
 let clock: Date;
@@ -92,7 +93,7 @@ async function createUser(
 beforeAll(async () => {
   const t = await createTestDb();
   db = t.db;
-  client = t.client;
+  closeDb = t.close;
   clock = new Date("2026-10-15T10:00:00Z");
   const opts: AppOptions = { db, jwtSecret: SECRET, now: () => clock, invites: sender, files: createMemoryStorage(), logger: false };
   const built = buildApp(opts);
@@ -106,7 +107,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await client.close();
+  await closeDb();
 });
 
 describe("genel", () => {
@@ -201,8 +202,8 @@ describe("davet ve kullanıcı yönetimi", () => {
 
   it("aynı e-posta ikinci kez kaydedilemez (büyük/küçük harf duyarsız)", async () => {
     const r = await call("POST", "/admin/users", admin, { first_name: "X", last_name: "Y", email: "ALI@SIRKET.TEST" });
-    expect(r.status).toBe(400);
-    expect(r.body.error.code).toBe("VALIDATION_FAILED");
+    expect(r.status).toBe(409);
+    expect(r.body.error.code).toBe("CONFLICT");
   });
 
   it("çalışan yönetici uçlarına erişemez", async () => {
@@ -251,7 +252,8 @@ describe("organizasyon, bağlantı ve konuşmalar", () => {
     expect(open.status).toBe(201);
     expect(open.body.company_low_id).toBeLessThan(open.body.company_high_id);
     const dup = await call("POST", "/admin/company-links", admin, { company_ids: [companyA, companyB] });
-    expect(dup.status).toBe(400);
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe("CONFLICT");
   });
 
   it("aynı şirket birebir konuşması açılır, tekrar istek mevcut konuşmayı döner (200)", async () => {
@@ -899,5 +901,176 @@ describe("ticket yorumları ve denetim kaydı (Faz 2)", () => {
     expect((await call("GET", "/admin/audit-log", requester.token)).status).toBe(403);
     const page2 = await call("GET", `/admin/audit-log?limit=2&cursor=${r.body.next_cursor ?? ""}`, admin);
     expect(page2.status).toBe(200);
+  });
+});
+
+
+// --- Faz 3: anma, push, ClamAV, çıkarılan üyenin olayı ---
+describe("anma, push ve tarama (kararlar)", () => {
+  function connectInbox(url: string) {
+    return new Promise<{ socket: WebSocket; next: (m: (x: any) => boolean, ms: number) => Promise<any | null> }>((resolve, reject) => {
+      const socket = new WebSocket(url);
+      const inbox: any[] = [];
+      socket.on("message", (raw) => inbox.push(JSON.parse(String(raw))));
+      socket.once("error", reject);
+      socket.once("open", () =>
+        resolve({
+          socket,
+          next: (match, ms) =>
+            new Promise((res) => {
+              const found = inbox.find(match);
+              if (found) return res(found);
+              const onMsg = (raw: unknown) => {
+                const m = JSON.parse(String(raw));
+                if (match(m)) {
+                  clearTimeout(timer);
+                  socket.off("message", onMsg);
+                  res(m);
+                }
+              };
+              const timer = setTimeout(() => {
+                socket.off("message", onMsg);
+                res(null);
+              }, ms);
+              socket.on("message", onMsg);
+            }),
+        }),
+      );
+    });
+  }
+
+  let admin: string;
+  let a: { id: string; token: string };
+  let b: { id: string; token: string };
+  let c: { id: string; token: string };
+  let d: { id: string; token: string };
+  let group: string;
+
+  beforeAll(async () => {
+    admin = await seedAdmin("kar-admin@sirket.test");
+    const dept = (await call("POST", "/admin/departments", admin, {
+      company_id: (await call("POST", "/admin/companies", admin, { name: "Karar Şirketi" })).body.company_id,
+      name: "Karar",
+    })).body.department_id;
+    a = await createUser(admin, "ka@sirket.test", [dept]);
+    b = await createUser(admin, "kb@sirket.test", [dept]);
+    c = await createUser(admin, "kc@sirket.test", [dept]);
+    d = await createUser(admin, "kd@sirket.test", [dept]);
+    group = (await call("POST", "/conversations", a.token, { type: "group", name: "Anma", member_ids: [b.id, c.id, d.id] })).body.conversation_id;
+  });
+
+  it("anılan kişi WebSocket ile anma olayını alır; anılmayan almaz", async () => {
+    const mention = await connectInbox(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=${b.token}`);
+    const other = await connectInbox(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=${c.token}`);
+    const gotB = mention.next((m) => m.type === "mention", 3000);
+    const gotC = other.next((m) => m.type === "mention", 800);
+    const r = await call("POST", `/conversations/${group}/messages`, a.token, {
+      client_message_id: randomUUID(),
+      content: "@Kemal Test bunu gör",
+      mentions: [b.id],
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.mentions).toEqual([b.id]);
+    expect((await gotB)?.message_id).toBe(r.body.message_id);
+    expect(await gotC).toBeNull();
+    mention.socket.close();
+    other.socket.close();
+  });
+
+  it("konuşmanın aktif üyesi olmayan kişi anılamaz", async () => {
+    const outsider = await createUser(admin, "kdis@sirket.test", []);
+    const r = await call("POST", `/conversations/${group}/messages`, a.token, {
+      client_message_id: randomUUID(),
+      content: "dışarıdan anma",
+      mentions: [outsider.id],
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("cihaz belirteci kaydedilir ve silinir", async () => {
+    const tok = "ExponentPushToken[test-belirtec-0001]";
+    const up = await call("POST", "/me/push-tokens", d.token, { token: tok, platform: "android" });
+    expect(up.status).toBe(204);
+    const del = await call("DELETE", "/me/push-tokens", d.token, { token: tok });
+    expect(del.status).toBe(204);
+  });
+
+  it("çevrimdışı üye ve anılan kişi push alır; çevrimiçi üye almaz; içerik gönderilmez", async () => {
+    const sent: any[] = [];
+    ctx.push = { send: async (msgs) => void sent.push(...msgs) };
+    await call("POST", "/me/push-tokens", d.token, { token: "ExponentPushToken[dddddddd-0001]", platform: "ios" });
+    await call("POST", "/me/push-tokens", c.token, { token: "ExponentPushToken[cccccccc-0001]", platform: "ios" });
+    const online = await connectInbox(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=${c.token}`);
+    await online.next((m) => m.type === "hello", 2000);
+    const r = await call("POST", `/conversations/${group}/messages`, a.token, {
+      client_message_id: randomUUID(),
+      content: "gizli içerik",
+      mentions: [d.id],
+    });
+    expect(r.status).toBe(201);
+    const toD = sent.filter((m) => m.to === "ExponentPushToken[dddddddd-0001]");
+    const toC = sent.filter((m) => m.to === "ExponentPushToken[cccccccc-0001]");
+    expect(toD.length).toBe(1);
+    expect(toD[0].body).toBe("Sizi bir mesajda andılar");
+    expect(toC.length).toBe(0);
+    expect(JSON.stringify(sent)).not.toContain("gizli içerik");
+    online.socket.close();
+    ctx.push = { send: async () => undefined };
+  });
+
+  it("çıkarılan üye membership.changed olayı alır", async () => {
+    const removed = await connectInbox(`${baseUrl.replace("http", "ws")}/api/v1/ws?access_token=${b.token}`);
+    await removed.next((m) => m.type === "hello", 2000);
+    const got = removed.next((m) => m.type === "membership.changed" && m.conversation_id === group, 3000);
+    const del = await call("DELETE", `/conversations/${group}/members/${b.id}`, a.token);
+    expect(del.status).toBe(204);
+    expect(await got).not.toBeNull();
+    removed.socket.close();
+  });
+
+  it("ClamAV (INSTREAM) ile tarama: temiz dosya kabul, zararlı dosya reddedilir", async () => {
+    const fakeClamd = await new Promise<{ port: number; close: () => Promise<void> }>((resolve) => {
+      const server = net.createServer((socket) => {
+        let buf = Buffer.alloc(0);
+        let started = false;
+        const parts: Buffer[] = [];
+        socket.on("data", (chunk) => {
+          buf = Buffer.concat([buf, chunk]);
+          if (!started) {
+            if (buf.length < 10) return;
+            buf = buf.subarray(10);
+            started = true;
+          }
+          while (buf.length >= 4) {
+            const len = buf.readUInt32BE(0);
+            if (len === 0) {
+              const text = Buffer.concat(parts).toString("latin1");
+              socket.end(text.includes("EICAR-STANDARD") ? "stream: Eicar-Test-Signature FOUND\0" : "stream: OK\0");
+              return;
+            }
+            if (buf.length < 4 + len) return;
+            parts.push(buf.subarray(4, 4 + len));
+            buf = buf.subarray(4 + len);
+          }
+        });
+      });
+      server.listen(0, "127.0.0.1", () => {
+        const addr = server.address();
+        resolve({ port: typeof addr === "object" && addr ? addr.port : 0, close: () => new Promise<void>((r) => server.close(() => r())) });
+      });
+    });
+    try {
+      ctx.scanner = clamdScanner({ host: "127.0.0.1", port: fakeClamd.port });
+      const conv = (await call("POST", "/conversations", a.token, { type: "direct", member_ids: [b.id] })).body.conversation_id;
+      const clean = await upload(a.token, conv, "text/plain", "temiz.txt", new TextEncoder().encode("merhaba"));
+      expect(clean.status).toBe(201);
+      const bad = await upload(a.token, conv, "text/plain", "zarar.txt", new TextEncoder().encode("X EICAR-STANDARD-ANTIVIRUS-TEST-FILE X"));
+      expect(bad.status).toBe(400);
+      expect(bad.body.error.code).toBe("VALIDATION_FAILED");
+    } finally {
+      ctx.scanner = { scan: async () => "clean" };
+      await fakeClamd.close();
+    }
   });
 });

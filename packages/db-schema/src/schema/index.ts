@@ -8,3 +8,4 @@ export * from "./access";
 export * from "./config";
 export * from "./auth";
 export * from "./attachments";
+export * from "./social";

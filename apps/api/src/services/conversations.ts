@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
-import { attachments, conversationMembers, conversations, messageRevisions, messages, users } from "@beyaz-ofis/db-schema";
+import { attachments, conversationMembers, conversations, messageMentions, messageRevisions, messages, users } from "@beyaz-ofis/db-schema";
 import { ApiError, enforce } from "../errors.js";
 import { canMessage } from "../policy/canMessage.js";
 import { canChangeMessage, MESSAGE_EDIT_WINDOW_MS } from "../policy/window.js";
 import { attachmentOut, claimForMessage } from "./attachments.js";
+import { pushToUsers } from "../push.js";
 import { MINUTE, type CompanyLink, type PolicyUser } from "../policy/types.js";
 import {
   activeMembership,
@@ -292,6 +293,7 @@ export async function addMembers(ctx: Ctx, actor: Actor, conversationId: string,
         now,
       });
     });
+    ctx.realtime.publish([userId], { type: "membership.changed", conversation_id: conversationId });
     await notifyConversation(ctx, conversationId);
   }
   return conversationDetail(ctx, actor, conversation);
@@ -322,6 +324,8 @@ export async function removeMember(ctx: Ctx, actor: Actor, conversationId: strin
       now,
     });
   });
+  // Çıkarılan kullanıcı artık aktif üye değil; listesinin tam yenilenmesi için ayrıca bildirilir.
+  ctx.realtime.publish([userId], { type: "membership.changed", conversation_id: conversationId });
   await notifyConversation(ctx, conversationId);
 }
 
@@ -336,6 +340,8 @@ export async function markRead(ctx: Ctx, actor: Actor, conversationId: string): 
     // K4: okundu olayı konuşmanın updated_at değerini günceller
     await tx.update(conversations).set({ updatedAt: now }).where(eq(conversations.conversationId, conversationId));
   });
+  // Okundu bilgisi gönderenin mesaj satırlarında görünsün diye üyelere olay gider (hibrit senkron).
+  await notifyConversation(ctx, conversationId);
 }
 
 export async function setMute(ctx: Ctx, actor: Actor, conversationId: string, isMuted: boolean) {
@@ -380,6 +386,9 @@ export async function serializeMessages(ctx: Ctx, viewerId: string, conversation
   const senderMap = new Map(senders.map((u) => [u.userId, u]));
   const msgIds = rows.map((r) => r.messageId);
   const linked = msgIds.length ? await ctx.db.select().from(attachments).where(inArray(attachments.messageId, msgIds)) : [];
+  const mentionRows = msgIds.length ? await ctx.db.select().from(messageMentions).where(inArray(messageMentions.messageId, msgIds)) : [];
+  const mentionsByMessage = new Map<string, string[]>();
+  for (const r of mentionRows) mentionsByMessage.set(r.messageId, [...(mentionsByMessage.get(r.messageId) ?? []), r.userId]);
   const attachmentByMessage = new Map(linked.map((a) => [a.messageId!, a]));
   const [conv] = await ctx.db.select().from(conversations).where(eq(conversations.conversationId, conversationId)).limit(1);
 
@@ -410,6 +419,7 @@ export async function serializeMessages(ctx: Ctx, viewerId: string, conversation
       read_count: readCount,
       read_by_peer: readByPeer,
       attachment: attachmentByMessage.has(m.messageId) ? attachmentOut(attachmentByMessage.get(m.messageId)!) : null,
+      mentions: mentionsByMessage.get(m.messageId) ?? [],
     };
   });
 }
@@ -466,7 +476,7 @@ export async function postMessage(
   ctx: Ctx,
   actor: Actor,
   conversationId: string,
-  body: { client_message_id: string; content: string; attachment_id?: string | undefined },
+  body: { client_message_id: string; content: string; attachment_id?: string | undefined; mentions?: string[] | undefined },
 ): Promise<{ status: 200 | 201; body: unknown }> {
   const { conversation } = await activeMembership(ctx.db, conversationId, actor.id);
 
@@ -479,6 +489,10 @@ export async function postMessage(
   if (dup) return { status: 200, body: (await serializeMessages(ctx, actor.id, conversationId, [dup]))[0] };
 
   const members = await ctx.db.select().from(conversationMembers).where(eq(conversationMembers.conversationId, conversationId));
+  // @ anma: yalnızca konuşmanın aktif üyeleri anılabilir (Ç7, WhatsApp tarzı).
+  const activeIds = new Set(members.filter((m) => m.leftAt === null).map((m) => m.userId));
+  const mentionIds = [...new Set(body.mentions ?? [])].filter((id) => id !== actor.id);
+  if (mentionIds.some((id) => !activeIds.has(id))) throw new ApiError("VALIDATION_FAILED", "Anılan kişi konuşmanın aktif üyesi değil.");
   if (conversation.type === "direct") {
     const peer = directPeer(members, actor.id);
     const peerUser = peer ? await loadUser(ctx.db, peer.userId) : null;
@@ -510,9 +524,12 @@ export async function postMessage(
         now,
       });
       if (body.attachment_id) await claimForMessage(tx, body.attachment_id, conversationId, actor.id, row.messageId);
+      if (mentionIds.length) {
+        await tx.insert(messageMentions).values(mentionIds.map((userId) => ({ messageId: row.messageId, userId })));
+      }
       return row;
     });
-    await notifyConversation(ctx, conversationId);
+    await afterMessage(ctx, conversationId, actor.id, m.messageId, mentionIds);
     return { status: 201, body: (await serializeMessages(ctx, actor.id, conversationId, [m]))[0] };
   } catch (e) {
     if (!isUniqueViolation(e)) throw e;
@@ -568,3 +585,31 @@ export async function deleteMessage(ctx: Ctx, actor: Actor, messageId: string): 
   await notifyConversation(ctx, m.conversationId);
 }
 
+
+// Mesaj sonrası: üyelere değişiklik olayı; anılanlara anma olayı; WebSocket'e ulaşılamayanlara push.
+// Push içeriği göndermez. Anma, sessize almayı aşar (anılan kişi mutlaka haberdar edilir).
+async function afterMessage(
+  ctx: Ctx,
+  conversationId: string,
+  senderId: string,
+  messageId: string,
+  mentionIds: string[],
+): Promise<void> {
+  const rows = await ctx.db
+    .select({ userId: conversationMembers.userId, isMuted: conversationMembers.isMuted, leftAt: conversationMembers.leftAt })
+    .from(conversationMembers)
+    .where(eq(conversationMembers.conversationId, conversationId));
+  const active = rows.filter((r) => r.leftAt === null);
+  const reached = ctx.realtime.publish(active.map((r) => r.userId), { type: "conversation.changed", conversation_id: conversationId });
+  const mentionReached = new Set<string>();
+  for (const userId of mentionIds) {
+    const got = ctx.realtime.publish([userId], { type: "mention", conversation_id: conversationId, message_id: messageId });
+    if (got.has(userId)) mentionReached.add(userId);
+  }
+  const offlineMentioned = mentionIds.filter((id) => !mentionReached.has(id));
+  const offlineMembers = active
+    .filter((r) => r.userId !== senderId && !r.isMuted && !reached.has(r.userId) && !mentionIds.includes(r.userId))
+    .map((r) => r.userId);
+  await pushToUsers(ctx, offlineMentioned, { title: "Beyaz Ofis", body: "Sizi bir mesajda andılar", data: { conversation_id: conversationId } });
+  await pushToUsers(ctx, offlineMembers, { title: "Beyaz Ofis", body: "Yeni mesajınız var", data: { conversation_id: conversationId } });
+}

@@ -15,6 +15,8 @@ import type { ErrorCode } from "@beyaz-ofis/core";
 import type { Db } from "../db.js";
 import type { Realtime } from "../realtime.js";
 import type { FileStorage } from "../storage.js";
+import type { PushSender } from "../push.js";
+import type { Scanner } from "../scanner.js";
 import { ApiError, enforce } from "../errors.js";
 import type { CompanyLink, Decision, PolicyUser, Role } from "../policy/types.js";
 
@@ -26,6 +28,8 @@ export interface Ctx {
   invites: InviteSender;
   realtime: Realtime;
   files: FileStorage;
+  push: PushSender;
+  scanner: Scanner;
 }
 
 export interface InviteSender {

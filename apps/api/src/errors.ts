@@ -29,6 +29,7 @@ const STATUS: Record<ErrorCode, number> = {
   REASON_TOO_SHORT: 422,
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
+  CONFLICT: 409,
 };
 
 const MESSAGES: Record<ErrorCode, string> = {
@@ -58,6 +59,7 @@ const MESSAGES: Record<ErrorCode, string> = {
   REASON_TOO_SHORT: "Gerekçe en az 20 karakter olmalı.",
   RATE_LIMITED: "Çok fazla istek. Lütfen bekleyin.",
   INTERNAL_ERROR: "Beklenmeyen bir hata oluştu.",
+  CONFLICT: "Bu kayıt zaten var ya da çakışıyor.",
 };
 
 export class ApiError extends Error {

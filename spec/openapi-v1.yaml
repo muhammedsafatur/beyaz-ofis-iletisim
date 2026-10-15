@@ -395,6 +395,11 @@ paths:
                 client_message_id: { type: string, format: uuid }
                 content: { type: string, minLength: 1, maxLength: 4000 }
                 attachment_id: { type: string, format: uuid, description: Faz 2. Önceden yüklenmiş ve bu konuşmaya ait, henüz bağlanmamış ek. }
+                mentions:
+                  type: array
+                  maxItems: 20
+                  items: { type: string, format: uuid }
+                  description: "@ anma (karar). Yalnızca konuşmanın aktif üyeleri anılabilir; anılanlara mention olayı ve push gider."
       responses:
         '201':
           description: Kaydedildi
@@ -1382,12 +1387,44 @@ paths:
   /ws:
     get:
       tags: [Conversations]
-      summary: "Gerçek zamanlı kanal (Faz 2, WebSocket). Erişim belirteci sorgu parametresinde gelir: /ws?access_token=... Kimliksiz bağlantı 4401 koduyla kapanır. Sunucu olayları: hello ve conversation.changed (yalnızca konu kimliği, içerik yok). İstemci değişikliği delta uçlarından çeker."
+      summary: "Gerçek zamanlı kanal (WebSocket). Erişim belirteci sorgu parametresinde gelir: /ws?access_token=... Kimliksiz bağlantı 4401 koduyla kapanır. Sunucu olayları (yalnızca kimlik bilgisi, içerik yok): hello, conversation.changed, membership.changed (konuşmadan çıkarıldınız, liste tam yenilenir), mention (sizi andılar). İstemci değişikliği delta uçlarından çeker; bağlıyken yoklama 30 sn'ye iner."
       parameters:
         - { name: access_token, in: query, required: true, schema: { type: string } }
       responses:
         '101': { description: Switching Protocols }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/push-tokens:
+    post:
+      tags: [Users]
+      summary: "Push cihaz belirteci kaydı (Expo Push). Bir belirteç yalnızca bir kullanıcıya bağlıdır; yeni kayıt eskisini devralır. Bildirim içeriği gönderilmez."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token: { type: string, minLength: 10, maxLength: 512 }
+                platform: { type: string, enum: [ios, android, desktop] }
+      responses:
+        '204': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [Users]
+      summary: Push cihaz belirtecini sil (çıkışta)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, minLength: 10, maxLength: 512 }
+      responses:
+        '204': { description: Silindi }
 
 components:
   securitySchemes:
@@ -1479,6 +1516,7 @@ components:
         - REASON_TOO_SHORT
         - RATE_LIMITED
         - INTERNAL_ERROR
+        - CONFLICT
 
     Error:
       type: object
@@ -1671,6 +1709,10 @@ components:
           type: boolean
           nullable: true
           description: Birebirde, yalnızca gönderenin kendi mesajlarında dolu (K2). Karşı taraf okuduysa true.
+        mentions:
+          type: array
+          items: { type: string, format: uuid }
+          description: Mesajda anılan kullanıcılar
         attachment:
           allOf:
             - $ref: '#/components/schemas/AttachmentMeta'

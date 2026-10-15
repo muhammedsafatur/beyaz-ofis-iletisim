@@ -59,7 +59,7 @@ async function seed(ctx: Ctx) {
   await postMessage(ctx, ali!, directId, { client_message_id: randomUUID(), content: "Akşam çıkıyor musun?" });
 }
 
-const { db, client } = await createTestDb();
+const { db, close: closeDb } = await createTestDb();
 const { app, ctx } = buildApp({ db, jwtSecret: JWT_SECRET, logger: false });
 await seed(ctx);
 await app.listen({ port: PORT, host: "127.0.0.1" });
@@ -68,7 +68,7 @@ console.log(`Giriş: ali@demo.test / ${PASSWORD}  (ayrıca ayse@demo.test, patro
 
 const shutdown = async () => {
   await app.close();
-  await client.close();
+  await closeDb();
   process.exit(0);
 };
 process.on("SIGINT", () => void shutdown());

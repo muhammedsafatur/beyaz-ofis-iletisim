@@ -51,7 +51,7 @@ async function assertLocations(ctx: Ctx, ids: number[]) {
 // Benzersiz ad ihlali (aktif kayıtlar için partial unique) doğrulama hatası olarak döner.
 function translateUnique(e: unknown, message: string): never {
   const code = (e as { code?: string; cause?: { code?: string } })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
-  if (code === "23505") throw new ApiError("VALIDATION_FAILED", message);
+  if (code === "23505") throw new ApiError("CONFLICT", message);
   throw e;
 }
 
@@ -423,7 +423,7 @@ export async function createCompanyLink(
     .from(companyLinks)
     .where(and(eq(companyLinks.companyLowId, a), eq(companyLinks.companyHighId, b), isNull(companyLinks.revokedAt)))
     .limit(1);
-  if (active) throw new ApiError("VALIDATION_FAILED", "Bu şirket çifti için aktif bağlantı zaten var.");
+  if (active) throw new ApiError("CONFLICT", "Bu şirket çifti için aktif bağlantı zaten var.");
 
   const [link] = await ctx.db
     .insert(companyLinks)

@@ -30,10 +30,13 @@ Kurum içi iletişim uygulaması. Monorepo: pnpm workspaces + Turborepo.
    cd apps/desktop && npx vite
    ```
 
-3. Testler:
+3. Altyapı (Docker): PostgreSQL ve ClamAV için `docker compose up -d`. Üretim ve gerçek PostgreSQL testleri için `DATABASE_URL`, `CLAMD_HOST`, `CLAMD_PORT`, `JWT_SECRET` ortam değişkenleri (bkz. `apps/api/.env.example`).
+
+4. Testler:
 
    ```bash
    cd apps/api && npm test          # politika ve API uçtan uca (PGlite, gerçek HTTP)
+   cd apps/api && TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test   # gerçek PostgreSQL
    cd packages/core && npx jest     # istemci ve senkronizasyon
    cd apps/desktop && npm run e2e   # tarayıcı uçtan uca (sistem Chrome; CHROME_PATH ile yol verilebilir)
    ```

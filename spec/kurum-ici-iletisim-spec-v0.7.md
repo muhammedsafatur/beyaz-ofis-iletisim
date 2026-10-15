@@ -8,6 +8,17 @@
 
 ## 0b. Değişiklik özeti (v0.6 → v0.7)
 
+**Kararlar (kullanıcı, şıklı tartışma)**
+- **Hata kodu:** Mükerrer kayıt ve çakışmalar `CONFLICT` (409) döner.
+- **Gerçek zamanlı kanal:** Hibrit senkron. Bağlıyken yoklama 30 sn, kopunca 3 sn. Olaylar: `conversation.changed`, `membership.changed` (çıkarılan kullanıcıya, liste tam yenilenir), `mention`.
+- **@ anma:** Gruplarda şirket bağlamı yok. Anma vurgu ve anlık bildirimdir; anılan kişi sessize almış olsa da bildirim alır. Anılanlar mesajda `mentions` ile döner.
+- **Push:** Expo Push. Yalnızca WebSocket ile ulaşılamayan kullanıcılara gider. İçerik gönderilmez: "Yeni mesajınız var" ya da "Sizi bir mesajda andılar".
+- **Dosya taraması:** Yerel disk + ClamAV (INSTREAM). Dosya kaydedilmeden taranır; zararlı dosya reddedilir. Üretimde `CLAMD_HOST` zorunludur.
+- **PostgreSQL testleri:** Repoya docker-compose eklendi. Testler `TEST_DATABASE_URL` ile gerçek PostgreSQL'de de koşar (her test dosyası kendi veritabanını alır).
+- **Masaüstü belirteçleri:** Electron safeStorage ile şifreli saklanır (tarayıcıda bellek içi).
+- **Masaüstü iş paneli:** Ticket açma ve karar, erişim talebi açma ve karar ekranları.
+- **Expo dışa aktarımı:** Şimdilik bırakıldı; Metro paketlemesi doğrulandı.
+
 **Faz 2 (uygulandı)**
 - **Gerçek zamanlı kanal:** `/api/v1/ws` (WebSocket). Konuşma değişikliğinde üyelere yalnızca konu kimliği gider (`conversation.changed`), içerik gitmez. İstemci delta uçlarından çeker. Yoklama yedek olarak sürer. Kimliksiz bağlantı 4401 ile kapanır.
 - **Dosya ekleri:** Yükleme `POST /conversations/:id/attachments` (ham gövde, en fazla 10 MB, türler: png, jpeg, gif, webp, pdf, text/plain). Mesaja `attachment_id` ile bağlanır, bir ek bir kez bağlanır. İndirme imzalıdır (5 dakika), oturum belirteci gerekmez, süre ve imza doğrulanır.
@@ -15,8 +26,8 @@
 - **Denetim kaydı:** `GET /admin/audit-log` (yalnızca sistem yöneticisi, değiştirilemez kayıtlar, en yeni önce).
 - **Yerleşik sınırlar:** Dosya deposu şimdilik yerel dizin (`apps/api/.data/attachments`). Üretim için nesne deposu ve virüs taraması kararı bekliyor.
 
-**Faz 2 (uygulanmadı)**
-- **Push bildirimi:** Bir push sağlayıcısının (FCM/APNs) kimlik bilgileri ve seçimi gerekiyor. Kod tarafı hazır değil.
+**Faz 2 (push)**
+- **Push bildirimi:** Expo Push (karar). Cihaz belirteci `POST /me/push-tokens`, gönderim sunucuda. Mobil kayıt EAS projectId gerektirir; yoksa atlanır.
 
 **Kullanıcı kararları**
 - **Patron (K3 ile birlikte):** "Yönetici" patrondur, birim yöneticisi değildir. Patron kurum genelinde tek bir roldür (`users.role = 'executive'`), birime atanmaz. Erişim talebi ve ticket kararını patron verir, karar öncesi içeriği görür. Birim yöneticisi bu akışlarda içerik görmez ve karar vermez. Patron yoksa karar sistem yöneticisindedir, yalnızca meta veriyle.
@@ -422,9 +433,9 @@ Değerler kodda sabit değil, tabloda tutulur. Her değişiklik `audit_log`'a ya
 | 4 | Meta veri listesi | Kapandı: OpenAPI listesi, üye sayısı dahil, Ç6 ile genişletildi |
 | 5 | Patron rolü ve karar yetkisi | Kapandı: `users.role = 'executive'`, kurum genelinde |
 | 6 | Kanal yetkisi (Ç8) | Kapandı: grup kurucusu ve birim yöneticisi |
-| 7 | Push bildirimi sağlayıcısı | Açık: FCM/APNs ya da Expo Push seçimi ve kimlik bilgileri |
-| 8 | Üretim dosya deposu ve virüs taraması | Açık: yerel dizin mi nesne deposu mu, tarama servisi var mı |
-| 9 | Ticket ve erişim talebi arayüzleri | Açık: istemcilerde yalnızca sohbet arayüzü var; ticket ve talep ekranları yapılmadı |
+| 7 | Push bildirimi sağlayıcısı | Kapandı: Expo Push (EAS projectId ve kimlik bilgileri dağıtımda eklenir) |
+| 8 | Üretim dosya deposu ve virüs taraması | Kapandı: yerel disk + ClamAV taraması (üretimde zorunlu) |
+| 9 | Ticket ve erişim talebi arayüzleri | Kısmen: masaüstünde iş paneli var; mobilde ticket ve talep ekranı yok |
 
 ---
 
