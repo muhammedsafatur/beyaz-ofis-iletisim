@@ -37,9 +37,13 @@ Kurum içi iletişim uygulaması. Monorepo: pnpm workspaces + Turborepo.
    ```bash
    cd apps/api && npm test          # politika ve API uçtan uca (PGlite, gerçek HTTP)
    cd apps/api && TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test   # gerçek PostgreSQL
+   cd apps/api && CLAMD_TEST_PORT=3310 npm test -- scanner.live   # gerçek clamd (yerel clamd 3310'da çalışıyor olmalı)
    cd packages/core && npx jest     # istemci ve senkronizasyon
    cd apps/desktop && npm run e2e   # tarayıcı uçtan uca (sistem Chrome; CHROME_PATH ile yol verilebilir)
    cd apps/desktop && npx tsc -p tsconfig.electron.json && npm run e2e:electron   # Electron penceresi: güvenli depo, oturum geri yükleme (API ve Vite açık olmalı)
+   cd apps/mobile && npx expo export --platform android --output-dir ../../.export-mobile   # üretim paketi (Hermes bytecode)
    ```
+
+   Not: `--dev` ile export, Windows'ta asset yolu hatası (`ENOENT ... mkdir`) veriyor. Üretim export'u (yukarıdaki) bu hatadan etkilenmiyor.
 
 Üretimde `apps/api` için `DATABASE_URL` ve en az 32 karakterlik `JWT_SECRET` gerekir (bkz. `apps/api/.env.example`).
