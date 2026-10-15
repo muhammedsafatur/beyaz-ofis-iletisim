@@ -122,6 +122,7 @@ Düzenleme geçmişi alıcıya gösterilmez. Alıcı yalnızca "düzenlendi" ya 
 **ticket_decisions**: `decision_id` (PK), `ticket_id`, `decided_by`, `decision` (enum: `approved`, `rejected`), `note`, `decided_at`
 - Kısıt: `decided_by <> requester_id`
 - Kısıt: ticket başına en fazla bir karar (`ticket_id` benzersiz, K5)
+- Değiştirilemez: karar kaydı UPDATE, DELETE ve TRUNCATE ile değişmez (§11)
 
 ### 3.6 Erişim talebi ve denetim
 
@@ -287,7 +288,7 @@ Hedef birimlerden biri onaylamış, diğeri bekliyorsa talep `pending` kalır. O
 - Şifreler argon2id ile hash'lenir, token rotation uygulanır.
 - Pasifleştirilen kullanıcının oturumları kapatılır.
 - Loglarda mesaj içeriği ve ticket gövdesi yer almaz.
-- `access_log` ve `audit_log` değiştirilemez.
+- `access_log`, `audit_log` ve `ticket_decisions` değiştirilemez (UPDATE, DELETE ve TRUNCATE engellidir).
 - Hız sınırlama: mesaj 60/dakika, ticket 20/saat, kullanıcı başına (`approval_rules`'tan okunur).
 - Dosyalar Faz 2'de eklenir, imzalı URL ile erişilir.
 

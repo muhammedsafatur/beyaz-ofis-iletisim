@@ -208,7 +208,7 @@ Etkilenen: §3.3, §3.4, §6, §9, §12; OpenAPI messages, conversations, `Messa
 **Önerilen: A.** Gerekçe: spec'in birim ilkesine uyar. Atanacak kişi yoksa ticket birimde bekler, bu da §5.6'daki "atanmayanlar" ifadesiyle uyumlu.
 Etkilenen: §5.6, §3.5; OpenAPI `POST /admin/users/:id/reassign`.
 **Uygulandı (kullanıcı: "dediğin gibi yap"):** Ticket kararı artık kurum genelindeki patron havuzunda, birim yöneticisinde değil. Bu nedenle ticket'ı bir kişiye ya da birime bağlamaya gerek kalmadı. Öneri: `ticket_ids` kaldırılır, açık ticket'lar havuzda kalır ve herhangi bir aktif patron karar verir. Patron yoksa §5.5 gereği sistem yöneticisi meta veriyle karar verir, süre dolarsa `expired` olur. `ticket_decisions.ticket_id` üzerinde tekil kısıt eklenir, böylece B14 de kapanır. Birim yöneticisi devri yalnızca `department_managers` kaydını değiştirir.
-**Karar verildi.** Migration `0004_k5_single_ticket_decision`. Gözlem (öneri, uygulanmadı): `ticket_decisions` için spec değiştirilemezlik istemiyor. Karar kaydı UPDATE ile değişebiliyor; `access_log` gibi trigger eklenmesi karar verilirse yapılır.
+**Karar verildi.** Migration `0004_k5_single_ticket_decision`. `ticket_decisions` değiştirilemez hale getirildi (kullanıcı kararı, migration `0005_ticket_decisions_immutable`): UPDATE, DELETE ve TRUNCATE trigger ile engelli, `access_log` ile aynı fonksiyon kullanılıyor. Spec §11 güncellendi.
 
 ### K6. Hata kodu kataloğu tanımlı değil
 

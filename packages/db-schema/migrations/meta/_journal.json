@@ -36,6 +36,13 @@
       "when": 1792057862723,
       "tag": "0004_k5_single_ticket_decision",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792059935824,
+      "tag": "0005_ticket_decisions_immutable",
+      "breakpoints": true
     }
   ]
 }
