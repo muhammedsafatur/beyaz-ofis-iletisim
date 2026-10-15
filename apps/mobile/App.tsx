@@ -11,6 +11,7 @@ import {
   connectRealtime,
   createApiClient,
   mentionSuggestions,
+  createMemoryTokenStore,
   resolveMentions,
   statusLabelTr,
   SyncEngine,
@@ -66,7 +67,7 @@ function currentOpen(): string[] {
 }
 
 // Belirteçler cihazın güvenli deposunda (iOS Keychain, Android Keystore). Düz depolama kullanılmaz (§10).
-const tokens: TokenStore = {
+const secureTokens: TokenStore = {
   async load() {
     const raw = await SecureStore.getItemAsync(TOKEN_KEY);
     return raw ? (JSON.parse(raw) as Tokens) : null;
@@ -78,6 +79,8 @@ const tokens: TokenStore = {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
   },
 };
+// Web önizlemesinde güvenli depo yoktur; belirteç yalnızca bellekte tutulur (sayfa yenilenince oturum kapanır).
+const tokens: TokenStore = Platform.OS === "web" ? createMemoryTokenStore() : secureTokens;
 
 const api = createApiClient({ baseUrl: API_URL, tokens });
 // React Native'de globalThis.crypto.randomUUID bulunmayabilir; kimlikler expo-crypto ile üretilir.

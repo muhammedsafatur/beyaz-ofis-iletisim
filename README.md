@@ -42,6 +42,9 @@ Kurum içi iletişim uygulaması. Monorepo: pnpm workspaces + Turborepo.
    cd apps/desktop && npm run e2e   # tarayıcı uçtan uca (sistem Chrome; CHROME_PATH ile yol verilebilir)
    cd apps/desktop && npx tsc -p tsconfig.electron.json && npm run e2e:electron   # Electron penceresi: güvenli depo, oturum geri yükleme (API ve Vite açık olmalı)
    cd apps/mobile && npx expo export --platform android --output-dir ../../.export-mobile   # üretim paketi (Hermes bytecode)
+   cd apps/mobile && EXPO_PUBLIC_API_URL=http://127.0.0.1:8081/api/v1 npx expo export --platform web --output-dir ../../.export-web   # mobil web derlemesi
+   cd apps/mobile && node e2e/serve-web.mjs ../../.export-web 8081 3000   # ayrı terminalde; API 3000'de açık olmalı
+   cd apps/mobile && node e2e/web-e2e.mjs   # mobil web e2e (tarayıcı: CHROME_PATH)
    ```
 
    Not: `--dev` ile export, Windows'ta asset yolu hatası (`ENOENT ... mkdir`) veriyor. Üretim export'u (yukarıdaki) bu hatadan etkilenmiyor.
