@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
-import { connectRealtime, type AuditEntry, type ConversationSummary, type LocalMessage, type UserSummary } from "@beyaz-ofis/core";
+import {
+  applyMention,
+  connectRealtime,
+  mentionSuggestions,
+  resolveMentions,
+  type AuditEntry,
+  type ConversationSummary,
+  type LocalMessage,
+  type UserSummary,
+} from "@beyaz-ofis/core";
 import { api, API_URL, engine, errorText, POLL_CONNECTED_MS, POLL_MS } from "./session";
 import { WorkPanel } from "./workPanel";
 
@@ -168,16 +177,11 @@ function MessageView({
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [id, messages.length]);
 
-  // "@" yazılınca üye önerileri (WhatsApp tarzı). Yalnızca konuşmanın aktif üyeleri.
-  const mentionMatch = /@([^\s@]*)$/.exec(text);
-  const query = mentionMatch ? mentionMatch[1]!.toLocaleLowerCase("tr") : null;
-  const suggestions =
-    query === null
-      ? []
-      : members.filter((u) => u.user_id !== me.user_id && `${u.first_name} ${u.last_name}`.toLocaleLowerCase("tr").startsWith(query)).slice(0, 5);
+  // "@" yazılınca üye önerileri (WhatsApp tarzı). Öneri mantığı core'dadır; mobil ile aynıdır.
+  const suggestions = mentionSuggestions(text, members, me.user_id);
 
   function pick(u: UserSummary) {
-    setText((t) => t.replace(/@([^\s@]*)$/, `@${u.first_name} ${u.last_name} `));
+    setText((t) => applyMention(t, u));
     setPicked((p) => (p.some((x) => x.user_id === u.user_id) ? p : [...p, u]));
   }
 
@@ -186,7 +190,7 @@ function MessageView({
     const content = text.trim();
     if (!content) return;
     // Anma yalnızca metinde adı hâlâ geçen kişiler için gönderilir.
-    const mentions = picked.filter((u) => content.includes(`@${u.first_name} ${u.last_name}`)).map((u) => u.user_id);
+    const mentions = resolveMentions(content, picked);
     setText("");
     setPicked([]);
     onSend(content, mentions);

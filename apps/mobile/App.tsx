@@ -7,8 +7,11 @@ import * as SecureStore from "expo-secure-store";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
 import {
   ApiRequestError,
+  applyMention,
   connectRealtime,
   createApiClient,
+  mentionSuggestions,
+  resolveMentions,
   SyncEngine,
   type ConversationSummary,
   type LocalMessage,
@@ -182,6 +185,8 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
   const snapshot = useSnapshot();
   const view = snapshot.views[id];
   const [text, setText] = useState("");
+  const [members, setMembers] = useState<UserSummary[]>([]);
+  const [picked, setPicked] = useState<UserSummary[]>([]);
   const listRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -203,11 +208,30 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
     if (view?.loaded) void api.markRead(id);
   }, [count, id, view?.loaded]);
 
+  // Anma önerileri için konuşmanın üyeleri bir kez çekilir.
+  useEffect(() => {
+    void api
+      .getConversation(id)
+      .then((detail) => setMembers(detail.members.map((m) => m.user)))
+      .catch(() => undefined);
+  }, [id]);
+
+  // "@" yazılınca öneri mantığı core'dadır; masaüstüyle aynıdır.
+  const suggestions = mentionSuggestions(text, members, me.user_id);
+
+  function pick(u: UserSummary) {
+    setText((t) => applyMention(t, u));
+    setPicked((p) => (p.some((x) => x.user_id === u.user_id) ? p : [...p, u]));
+  }
+
   function send() {
     const content = text.trim();
     if (!content) return;
+    // Anma yalnızca metinde adı hâlâ geçen seçimler için gönderilir.
+    const mentions = resolveMentions(content, picked);
     setText("");
-    void engine.send(id, content, me).catch(() => undefined);
+    setPicked([]);
+    void engine.send(id, content, me, undefined, mentions).catch(() => undefined);
   }
 
   return (
@@ -252,8 +276,17 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
           );
         })}
       </ScrollView>
+      {suggestions.length > 0 ? (
+        <ScrollView horizontal style={styles.suggestBar} contentContainerStyle={styles.suggestContent} keyboardShouldPersistTaps="handled">
+          {suggestions.map((u) => (
+            <Pressable key={u.user_id} testID="mention-option" onPress={() => pick(u)} style={styles.suggestItem}>
+              <Text style={styles.link}>{`@${u.first_name} ${u.last_name}`}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
       <View style={styles.composer}>
-        <TextInput testID="composer" style={[styles.input, styles.flex]} placeholder="Mesaj yazın" value={text} onChangeText={setText} maxLength={4000} />
+        <TextInput testID="composer" style={[styles.input, styles.flex]} placeholder="Mesaj yazın (@ ile anın)" value={text} onChangeText={setText} maxLength={4000} />
         <Pressable testID="send" onPress={send} disabled={!text.trim()} style={styles.primary}>
           <Text style={styles.primaryText}>Gönder</Text>
         </Pressable>
@@ -368,5 +401,8 @@ const styles = StyleSheet.create({
   meta: { fontSize: 11, color: colors.textMuted },
   system: { textAlign: "center", color: colors.textMuted, fontSize: 12 },
   composer: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
+  suggestBar: { flexGrow: 0, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
+  suggestContent: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, gap: spacing.sm, alignItems: "center" },
+  suggestItem: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.surface },
   banner: { backgroundColor: "#FEF3C7", color: "#92400E", padding: spacing.sm, fontSize: 13 },
 });
