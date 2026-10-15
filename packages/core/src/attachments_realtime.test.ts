@@ -37,7 +37,7 @@ describe("dosya ekleri istemcisi", () => {
   it("mesaj gönderimi ek kimliğini taşır", async () => {
     const { fn, seen } = fakeFetch(() => ({ status: 201, body: {} }));
     const api = createApiClient({ baseUrl: BASE, tokens: createMemoryTokenStore({ access_token: "T", refresh_token: "R", expires_in: 900 }), fetch: fn });
-    await api.sendMessage("c1", "cm-1", "ekte", "a1");
+    await api.sendMessage("c1", "cm-1", "ekte", { attachmentId: "a1" });
     expect(JSON.parse(String(seen[0]!.init!.body))).toEqual({ client_message_id: "cm-1", content: "ekte", attachment_id: "a1" });
   });
 });

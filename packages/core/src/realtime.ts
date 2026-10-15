@@ -2,8 +2,9 @@
 // Bağlantı koparsa üstel geri çekilmeyle yeniden kurulur; yoklama (SyncEngine.start) yedek olarak sürer.
 
 export interface RealtimeEvent {
-  type: "hello" | "conversation.changed";
+  type: "hello" | "conversation.changed" | "membership.changed" | "mention";
   conversation_id?: string;
+  message_id?: string;
 }
 
 export interface RealtimeOptions {

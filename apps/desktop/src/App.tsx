@@ -1,25 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
-import {
-  ApiRequestError,
-  connectRealtime,
-  createApiClient,
-  createMemoryTokenStore,
-  SyncEngine,
-  type AuditEntry,
-  type ConversationSummary,
-  type LocalMessage,
-  type UserSummary,
-} from "@beyaz-ofis/core";
+import { connectRealtime, type AuditEntry, type ConversationSummary, type LocalMessage, type UserSummary } from "@beyaz-ofis/core";
+import { api, API_URL, engine, errorText, POLL_CONNECTED_MS, POLL_MS } from "./session";
+import { WorkPanel } from "./workPanel";
 
-// Geliştirmede Vite proxy'si /api isteklerini yerel API'ye iletir. Paketlenmiş sürümde VITE_API_URL verilir.
-const API_URL: string = import.meta.env.VITE_API_URL ?? "/api/v1";
-const POLL_MS = 3000;
+type Me = UserSummary & { role?: string };
 
-// Masaüstünde belirteçler Electron safeStorage ile saklanacak; bu sürümde bellek içi (kalıcı değil).
-const tokens = createMemoryTokenStore();
-const api = createApiClient({ baseUrl: API_URL, tokens });
-const engine = new SyncEngine(api);
 let realtime: { close(): void } | null = null;
 
 // Gerçek zamanlı kanal adresi (ws/wss). Vite proxy'si ws isteklerini de API'ye iletir.
@@ -37,14 +23,6 @@ function useSnapshot() {
 }
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-
-function errorText(err: unknown): string {
-  if (err instanceof ApiRequestError) {
-    if (err.code === "RATE_LIMITED" && err.retryAfter) return `Çok hızlı gönderiyorsunuz. ${err.retryAfter} sn sonra deneyin.`;
-    return err.message;
-  }
-  return err instanceof Error ? err.message : "Bir hata oluştu.";
-}
 
 function LoginView({ onLogin }: { onLogin: (email: string, password: string) => Promise<void> }) {
   const [email, setEmail] = useState("ali@demo.test");
@@ -98,15 +76,17 @@ function Sidebar({
   onSelect,
   onLogout,
   onAudit,
+  onWork,
   me,
 }: {
-  onAudit: () => void;
   conversations: ConversationSummary[];
   names: Record<string, string>;
   selected: string | null;
   onSelect: (id: string) => void;
   onLogout: () => void;
-  me: UserSummary & { role?: string };
+  onAudit: () => void;
+  onWork: () => void;
+  me: Me;
 }) {
   return (
     <aside style={styles.sidebar} data-testid="sidebar">
@@ -120,6 +100,9 @@ function Sidebar({
               Denetim
             </button>
           )}
+          <button data-testid="work-open" onClick={onWork} style={styles.linkButton}>
+            İş
+          </button>
           <button data-testid="logout" onClick={onLogout} style={styles.linkButton}>
             Çıkış
           </button>
@@ -161,20 +144,23 @@ function MessageView({
   name,
   messages,
   hasOlder,
+  members,
   onLoadOlder,
   onSend,
   onAttach,
 }: {
-  me: UserSummary;
+  me: Me;
   id: string;
   name: string;
   messages: LocalMessage[];
   hasOlder: boolean;
+  members: UserSummary[];
   onLoadOlder: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, mentions: string[]) => void;
   onAttach: (file: File) => void;
 }) {
   const [text, setText] = useState("");
+  const [picked, setPicked] = useState<UserSummary[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -182,12 +168,28 @@ function MessageView({
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [id, messages.length]);
 
+  // "@" yazılınca üye önerileri (WhatsApp tarzı). Yalnızca konuşmanın aktif üyeleri.
+  const mentionMatch = /@([^\s@]*)$/.exec(text);
+  const query = mentionMatch ? mentionMatch[1]!.toLocaleLowerCase("tr") : null;
+  const suggestions =
+    query === null
+      ? []
+      : members.filter((u) => u.user_id !== me.user_id && `${u.first_name} ${u.last_name}`.toLocaleLowerCase("tr").startsWith(query)).slice(0, 5);
+
+  function pick(u: UserSummary) {
+    setText((t) => t.replace(/@([^\s@]*)$/, `@${u.first_name} ${u.last_name} `));
+    setPicked((p) => (p.some((x) => x.user_id === u.user_id) ? p : [...p, u]));
+  }
+
   function send(e: React.FormEvent) {
     e.preventDefault();
     const content = text.trim();
     if (!content) return;
+    // Anma yalnızca metinde adı hâlâ geçen kişiler için gönderilir.
+    const mentions = picked.filter((u) => content.includes(`@${u.first_name} ${u.last_name}`)).map((u) => u.user_id);
     setText("");
-    onSend(content);
+    setPicked([]);
+    onSend(content, mentions);
   }
 
   return (
@@ -209,9 +211,10 @@ function MessageView({
           }
           const mine = m.sender?.user_id === me.user_id;
           const receipt = mine ? receiptText(m) : null;
+          const mentioned = !mine && (m.mentions ?? []).includes(me.user_id);
           return (
-            <div key={m.message_id} data-testid="message" data-pending={m.pending ?? ""} style={{ ...styles.bubbleRow, justifyContent: mine ? "flex-end" : "flex-start" }}>
-              <div style={{ ...styles.bubble, background: mine ? "#DBEAFE" : colors.surface }}>
+            <div key={m.message_id} data-testid="message" data-pending={m.pending ?? ""} data-mention={mentioned ? "true" : undefined} style={{ ...styles.bubbleRow, justifyContent: mine ? "flex-end" : "flex-start" }}>
+              <div style={{ ...styles.bubble, background: mentioned ? "#FEF9C3" : mine ? "#DBEAFE" : colors.surface }}>
                 {!mine && <div style={styles.sender}>{m.sender ? `${m.sender.first_name} ${m.sender.last_name}` : ""}</div>}
                 <div>{m.deleted ? <em style={{ color: colors.textMuted }}>Mesaj silindi</em> : m.content}</div>
                 {m.attachment && !m.deleted && (
@@ -224,6 +227,7 @@ function MessageView({
                   </button>
                 )}
                 <div style={styles.meta}>
+                  {mentioned ? "@ sizi andı · " : ""}
                   {m.edited_at && !m.deleted ? "düzenlendi · " : ""}
                   {time(m.sent_at)}
                   {m.pending === "sending" && " · gönderiliyor"}
@@ -236,12 +240,23 @@ function MessageView({
         })}
         <div ref={bottomRef} />
       </div>
+      {suggestions.length > 0 && (
+        <ul data-testid="mention-suggestions" style={styles.suggest}>
+          {suggestions.map((u) => (
+            <li key={u.user_id}>
+              <button type="button" data-testid="mention-option" onClick={() => pick(u)} style={styles.linkButton}>
+                @{u.first_name} {u.last_name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <form onSubmit={send} style={styles.composer}>
         <input
           data-testid="composer"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Mesaj yazın"
+          placeholder="Mesaj yazın (@ ile anın)"
           style={{ ...styles.input, flex: 1 }}
           maxLength={4000}
         />
@@ -301,10 +316,11 @@ function AuditPanel({ onClose }: { onClose: () => void }) {
 
 export default function App() {
   const snapshot = useSnapshot();
-  const [me, setMe] = useState<UserSummary | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
-  const [auditOpen, setAuditOpen] = useState(false);
+  const [members, setMembers] = useState<Record<string, UserSummary[]>>({});
+  const [view, setView] = useState<"chat" | "audit" | "work">("chat");
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
 
@@ -315,7 +331,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, openCount, me]);
 
-  // Birebir konuşmalarda karşı tarafın adını bir kez çek (liste özetinde yalnızca tip var).
+  // Birebir konuşmalarda karşı tarafın adını ve konuşma üyelerini bir kez çek.
   useEffect(() => {
     if (!me) return;
     for (const c of snapshot.conversations) {
@@ -330,20 +346,27 @@ export default function App() {
     }
   }, [snapshot.conversations, me, names]);
 
+  // Anma olayı geldiğinde kullanıcıya ulaşılabilir bir bildirim (tarayıcı izni varsa).
+  useEffect(() => {
+    if (!me || snapshot.mentions.length === 0) return;
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("Beyaz Ofis", { body: "Sizi bir mesajda andılar" });
+    }
+  }, [snapshot.mentions.length, me]);
+
   async function login(email: string, password: string) {
     await api.auth.login(email, password);
-    const user = await api.me();
+    const user = (await api.me()) as Me;
     setMe(user);
     await engine.refreshConversations(true);
     engine.start(() => (selectedRef.current ? [selectedRef.current] : []), POLL_MS);
-    // Gerçek zamanlı olay gelince hemen senkronize et; yoklama yedek olarak sürer.
+    // Gerçek zamanlı olaylar hemen senkronize eder; bağlıyken yoklama 30 sn'ye iner (hibrit senkron).
     realtime?.close();
     realtime = connectRealtime({
       url: realtimeUrl(),
-      getToken: async () => (await tokens.load())?.access_token ?? null,
-      onEvent: (e) => {
-        if (e.type === "conversation.changed") void engine.tick(selectedRef.current ? [selectedRef.current] : []);
-      },
+      getToken: async () => (await api.auth.currentAccessToken()) ?? null,
+      onEvent: (e) => void engine.handleRealtime(e),
+      onStatus: (connected) => engine.setPollInterval(connected ? POLL_CONNECTED_MS : POLL_MS),
     });
   }
 
@@ -355,12 +378,13 @@ export default function App() {
     setMe(null);
     setSelected(null);
     setNames({});
-    setAuditOpen(false);
+    setMembers({});
+    setView("chat");
   }
 
   // Dosya ekiyle mesaj: dosya yüklenir, bağlı mesaj gönderilir.
   async function attach(file: File) {
-    if (!selected) return;
+    if (!selected || !me) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
     const meta = await api.uploadAttachment(selected, { fileName: file.name, contentType: file.type, bytes });
     await engine.send(selected, `Dosya: ${file.name}`, me, meta.attachment_id).catch(() => undefined);
@@ -368,9 +392,21 @@ export default function App() {
 
   async function select(id: string) {
     setSelected(id);
-    const view = engine.getSnapshot().views[id];
-    if (!view?.loaded) await engine.openConversation(id);
+    setView("chat");
+    const current = engine.getSnapshot().views[id];
+    if (!current?.loaded) await engine.openConversation(id);
+    if (!members[id]) {
+      const detail = await api.getConversation(id).catch(() => null);
+      if (detail) setMembers((m) => ({ ...m, [id]: detail.members.map((x) => x.user) }));
+    }
     await api.markRead(id);
+  }
+
+  // Anma bildirimine tıklayınca: anılan son konuşma açılır, anma listesi temizlenir.
+  async function openMention() {
+    const last = engine.getSnapshot().mentions.at(-1);
+    engine.clearMentions();
+    if (last) await select(last.conversation_id);
   }
 
   if (!me) {
@@ -381,7 +417,7 @@ export default function App() {
     );
   }
 
-  const view = selected ? snapshot.views[selected] : undefined;
+  const current = selected ? snapshot.views[selected] : undefined;
   const conv = snapshot.conversations.find((c) => c.conversation_id === selected);
   const title = conv ? (conv.type === "direct" ? names[conv.conversation_id] ?? "Birebir konuşma" : conv.name ?? "Konuşma") : "";
 
@@ -393,26 +429,35 @@ export default function App() {
         selected={selected}
         onSelect={select}
         onLogout={logout}
-        onAudit={() => setAuditOpen(true)}
+        onAudit={() => setView("audit")}
+        onWork={() => setView("work")}
         me={me}
       />
-      {auditOpen ? (
-        <AuditPanel onClose={() => setAuditOpen(false)} />
-      ) : selected && view?.loaded ? (
+      {view === "audit" ? (
+        <AuditPanel onClose={() => setView("chat")} />
+      ) : view === "work" ? (
+        <WorkPanel me={me} conversations={snapshot.conversations} onClose={() => setView("chat")} />
+      ) : selected && current?.loaded ? (
         <MessageView
           me={me}
           id={selected}
           name={title}
-          messages={view.messages}
-          hasOlder={view.hasOlder}
+          messages={current.messages}
+          hasOlder={current.hasOlder}
+          members={members[selected] ?? []}
           onLoadOlder={() => void engine.loadOlder(selected)}
-          onSend={(t) => void engine.send(selected, t, me).catch(() => undefined)}
+          onSend={(t, mentions) => void engine.send(selected, t, me, undefined, mentions).catch(() => undefined)}
           onAttach={(f) => void attach(f).catch(() => undefined)}
         />
       ) : (
         <section style={styles.main}>
           <p style={{ color: colors.textMuted, padding: spacing.lg }}>Bir konuşma seçin.</p>
         </section>
+      )}
+      {snapshot.mentions.length > 0 && (
+        <button data-testid="mention-banner" onClick={() => void openMention()} style={styles.mentionBanner}>
+          Sizi bir mesajda andılar ({snapshot.mentions.length})
+        </button>
       )}
       {snapshot.lastError && (
         <div data-testid="sync-error" style={styles.banner}>
@@ -444,5 +489,7 @@ const styles = {
   meta: { fontSize: 11, color: colors.textMuted, marginTop: 4 } as const,
   system: { textAlign: "center", color: colors.textMuted, fontSize: 12, margin: `${spacing.xs}px 0` } as const,
   composer: { display: "flex", gap: spacing.sm, padding: spacing.md, borderTop: "1px solid #E2E8F0" } as const,
+  suggest: { listStyle: "none", margin: 0, padding: `0 ${spacing.md}px`, display: "flex", gap: spacing.sm, flexWrap: "wrap" } as const,
   banner: { position: "fixed", bottom: spacing.md, right: spacing.md, background: "#FEF3C7", color: "#92400E", padding: `${spacing.sm}px ${spacing.md}px`, borderRadius: radius.sm, fontSize: 13 } as const,
+  mentionBanner: { position: "fixed", top: spacing.md, right: spacing.md, background: "#FEF9C3", color: "#713F12", border: "1px solid #FDE68A", padding: `${spacing.sm}px ${spacing.md}px`, borderRadius: radius.sm, fontSize: 13, cursor: "pointer" } as const,
 };

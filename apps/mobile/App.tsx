@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { BackHandler, FlatList, KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Crypto from "expo-crypto";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
 import {
@@ -28,10 +30,26 @@ function startRealtime() {
   realtime = connectRealtime({
     url: REALTIME_URL,
     getToken: async () => (await tokens.load())?.access_token ?? null,
-    onEvent: (e) => {
-      if (e.type === "conversation.changed") void engine.tick(currentOpen());
-    },
+    // Hibrit senkron: olaylar hemen senkronize eder; bağlıyken yoklama 30 sn, kopunca 3 sn.
+    onEvent: (e) => void engine.handleRealtime(e),
+    onStatus: (connected) => engine.setPollInterval(connected ? 30000 : POLL_MS),
   });
+}
+
+// Push: cihaz belirteci sunucuya kaydedilir. EAS projectId yoksa kayıt atlanır (uygulama yine çalışır).
+let pushToken: string | null = null;
+async function registerPush() {
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+  if (!projectId) {
+    console.info("Push: EAS projectId tanımlı değil, kayıt atlandı.");
+    return;
+  }
+  const current = await Notifications.getPermissionsAsync();
+  const granted = current.status === "granted" || (await Notifications.requestPermissionsAsync()).status === "granted";
+  if (!granted) return;
+  const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
+  pushToken = data;
+  await api.registerPushToken(data, Platform.OS === "ios" ? "ios" : "android").catch(() => undefined);
 }
 
 // Açık konuşma kimliği (yalnızca bildirim için); ekran durumuyla eşlenir.
@@ -218,13 +236,14 @@ function Chat({ me, id, title, onBack }: { me: UserSummary; id: string; title: s
             );
           }
           const mine = m.sender?.user_id === me.user_id;
+          const mentioned = !mine && (m.mentions ?? []).includes(me.user_id);
           const status = m.pending === "sending" ? "gönderiliyor" : m.pending === "failed" ? "gönderilemedi" : null;
           const meta = [m.deleted ? null : m.edited_at ? "düzenlendi" : null, time(m.sent_at), status, mine && !m.pending ? receipt(m) : null]
             .filter(Boolean)
             .join(" · ");
           return (
             <View key={m.message_id} style={[styles.bubbleRow, { justifyContent: mine ? "flex-end" : "flex-start" }]}>
-              <View style={[styles.bubble, { backgroundColor: mine ? "#DBEAFE" : colors.surface }]}>
+              <View style={[styles.bubble, { backgroundColor: mentioned ? "#FEF9C3" : mine ? "#DBEAFE" : colors.surface }]}>
                 {!mine && m.sender ? <Text style={styles.sender}>{`${m.sender.first_name} ${m.sender.last_name}`}</Text> : null}
                 <Text style={m.deleted ? styles.deleted : undefined}>{m.deleted ? "Mesaj silindi" : m.content}</Text>
                 <Text style={styles.meta}>{meta}</Text>
@@ -259,6 +278,7 @@ export default function App() {
         await engine.refreshConversations(true);
         engine.start(currentOpen, POLL_MS);
         startRealtime();
+        void registerPush();
       } catch {
         await tokens.clear();
       }
@@ -289,11 +309,14 @@ export default function App() {
     await engine.refreshConversations(true);
     engine.start(currentOpen, POLL_MS);
     startRealtime();
+    void registerPush();
   }
 
   async function logout() {
     realtime?.close();
     realtime = null;
+    if (pushToken) await api.removePushToken(pushToken).catch(() => undefined);
+    pushToken = null;
     engine.reset();
     await api.auth.logout();
     setMe(null);

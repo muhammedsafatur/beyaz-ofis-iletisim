@@ -56,6 +56,8 @@ export interface Message {
   read_by_peer: boolean | null;
   // Faz 2: bağlı dosya eki
   attachment: AttachmentMeta | null;
+  // @ anma: anılan kullanıcı kimlikleri
+  mentions: string[];
 }
 
 export interface MessagePage {
@@ -96,4 +98,72 @@ export interface AuditEntry {
 export interface AuditPage {
   items: AuditEntry[];
   next_cursor: string | null;
+}
+
+export interface ApprovalRulesView {
+  request_expiry_hours: number;
+  access_window_hours: number;
+  message_rate_per_min: number;
+  ticket_rate_per_hour: number;
+}
+
+export interface Department {
+  department_id: number;
+  company_id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface AccessRequestTarget {
+  department_id: number;
+  status: "pending" | "approved" | "rejected" | "expired";
+  decided_by: UserSummary | null;
+  decision_basis: "content" | "meta" | null;
+  decided_at: string | null;
+}
+
+export interface AccessRequestSummary {
+  request_id: string;
+  conversation_id: string;
+  conversation_name: string | null;
+  requester: UserSummary | null;
+  status: "pending" | "approved" | "rejected" | "withdrawn" | "expired";
+  reopened_from: string | null;
+  created_at: string;
+  expires_at: string;
+  meta: {
+    conversation_type: "direct" | "group" | "department";
+    conversation_name: string | null;
+    requester_department_ids: number[];
+    member_count: number;
+    message_count: number;
+    first_message_at: string | null;
+    last_message_at: string | null;
+    reason: string;
+    target_department_ids: number[];
+  };
+}
+
+export interface AccessRequestDetail extends AccessRequestSummary {
+  reason: string;
+  targets: AccessRequestTarget[];
+  access_expires_at: string | null;
+}
+
+export interface TicketSummary {
+  ticket_id: string;
+  requester: UserSummary | null;
+  target_department_id: number;
+  title: string;
+  status: "pending" | "approved" | "rejected" | "withdrawn" | "expired";
+  reopened_from: string | null;
+  created_at: string;
+  expires_at: string;
+  closed_at: string | null;
+}
+
+export interface TicketDetail extends TicketSummary {
+  body: string | null;
+  edit_window_closes_at: string | null;
+  decisions: { decided_by: UserSummary | null; decision: "approved" | "rejected"; note: string | null; decided_at: string }[];
 }

@@ -1,13 +1,18 @@
 import type { ErrorCode } from "./domain/errors";
 import type { TokenStore } from "./tokens";
 import type {
+  AccessRequestDetail,
+  AccessRequestSummary,
   AttachmentMeta,
   AuditPage,
   Conversation,
   ConversationPage,
+  Department,
   Message,
   MessagePage,
   TicketComment,
+  TicketDetail,
+  TicketSummary,
   Tokens,
   UserSummary,
 } from "./types";
@@ -123,6 +128,10 @@ export function createApiClient(opts: ApiClientOptions) {
         await opts.tokens.save(tokens);
         return tokens;
       },
+      // Gerçek zamanlı bağlantı gibi dış bileşenler için geçerli erişim belirteci.
+      async currentAccessToken(): Promise<string | null> {
+        return (await opts.tokens.load())?.access_token ?? null;
+      },
       async logout(): Promise<void> {
         const current = await opts.tokens.load();
         if (current) await raw("POST", "/auth/logout", { refresh_token: current.refresh_token });
@@ -148,12 +157,52 @@ export function createApiClient(opts: ApiClientOptions) {
         })}`,
       );
     },
-    sendMessage: (id: string, clientMessageId: string, content: string, attachmentId?: string): Promise<Message> =>
+    sendMessage: (
+      id: string,
+      clientMessageId: string,
+      content: string,
+      extra: { attachmentId?: string; mentions?: string[] } = {},
+    ): Promise<Message> =>
       request("POST", `/conversations/${id}/messages`, {
         client_message_id: clientMessageId,
         content,
-        ...(attachmentId ? { attachment_id: attachmentId } : {}),
+        ...(extra.attachmentId ? { attachment_id: extra.attachmentId } : {}),
+        ...(extra.mentions && extra.mentions.length ? { mentions: extra.mentions } : {}),
       }),
+    // Push: cihaz belirteci kaydı ve silme
+    registerPushToken: (token: string, platform: "ios" | "android" | "desktop"): Promise<void> =>
+      request("POST", "/me/push-tokens", { token, platform }),
+    removePushToken: (token: string): Promise<void> => request("DELETE", "/me/push-tokens", { token }),
+    departments: (companyId?: number): Promise<Department[]> =>
+      request("GET", `/departments${query({ company_id: companyId })}`),
+    // Ticket
+    listTickets: (role: "requester" | "approver", status?: TicketSummary["status"]): Promise<{ items: TicketSummary[]; next_cursor: string | null }> =>
+      request("GET", `/tickets${query({ role, status })}`),
+    getTicket: (ticketId: string): Promise<TicketDetail> => request("GET", `/tickets/${ticketId}`),
+    createTicket: (input: { clientRequestId: string; targetDepartmentId: number; title: string; body: string }): Promise<TicketDetail> =>
+      request("POST", "/tickets", {
+        client_request_id: input.clientRequestId,
+        target_department_id: input.targetDepartmentId,
+        title: input.title,
+        body: input.body,
+      }),
+    decideTicket: (ticketId: string, decision: "approved" | "rejected", note?: string): Promise<TicketDetail> =>
+      request("POST", `/tickets/${ticketId}/decision`, { decision, ...(note ? { note } : {}) }),
+    // Erişim talebi
+    listAccessRequests: (role: "requester" | "approver", status?: AccessRequestSummary["status"]): Promise<{ items: AccessRequestSummary[]; next_cursor: string | null }> =>
+      request("GET", `/access-requests${query({ role, status })}`),
+    createAccessRequest: (input: { clientRequestId: string; conversationId: string; reason: string; targetDepartmentIds: number[] }): Promise<AccessRequestDetail> =>
+      request("POST", "/access-requests", {
+        client_request_id: input.clientRequestId,
+        conversation_id: input.conversationId,
+        reason: input.reason,
+        target_department_ids: input.targetDepartmentIds,
+      }),
+    decideAccessTarget: (requestId: string, departmentId: number, decision: "approved" | "rejected"): Promise<AccessRequestDetail> =>
+      request("POST", `/access-requests/${requestId}/targets/${departmentId}/decision`, { decision }),
+    withdrawAccessRequest: (requestId: string): Promise<AccessRequestDetail> => request("POST", `/access-requests/${requestId}/withdraw`),
+    withdrawTicket: (ticketId: string): Promise<TicketDetail> => request("POST", `/tickets/${ticketId}/withdraw`),
+    getAccessRequest: (requestId: string): Promise<AccessRequestDetail> => request("GET", `/access-requests/${requestId}`),
     // Faz 2: dosya eki. Ham gövde yüklenir, sunucu türü ve boyutu doğrular.
     uploadAttachment: (
       conversationId: string,

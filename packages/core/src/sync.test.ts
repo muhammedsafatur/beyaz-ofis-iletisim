@@ -28,6 +28,7 @@ const msg = (id: string, seq: number, changeSeq: number, content: string, extra:
   read_count: null,
   read_by_peer: null,
   attachment: null,
+  mentions: [],
   ...extra,
 });
 
@@ -96,7 +97,7 @@ describe("senkronizasyon motoru", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]!.pending).toBeUndefined();
     expect(messages[0]!.message_id).toBe("srv-1");
-    expect(api.sendMessage).toHaveBeenCalledWith("c1", "cid-1", "merhaba", undefined);
+    expect(api.sendMessage).toHaveBeenCalledWith("c1", "cid-1", "merhaba", { attachmentId: undefined, mentions: [] });
   });
 
   it("gönderim başarısızsa mesaj 'failed' işaretlenir ve hata iletilir", async () => {

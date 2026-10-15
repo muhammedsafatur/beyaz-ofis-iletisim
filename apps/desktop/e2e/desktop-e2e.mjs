@@ -14,6 +14,9 @@ const check = (label, ok, extra = "") => {
   console.log(`${ok ? "OK  " : "FAIL"} ${label}${extra ? ` (${extra})` : ""}`);
 };
 
+let cachedGroupId = null;
+const groupConvId = () => cachedGroupId;
+
 async function api(method, path, token, body) {
   const res = await fetch(API + path, {
     method,
@@ -23,6 +26,9 @@ async function api(method, path, token, body) {
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : null };
 }
+
+const seedLogin = await (await fetch(API + "/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "ali@demo.test", password: "demo-parola-123" }) })).json();
+cachedGroupId = (await (await fetch(API + "/conversations", { headers: { authorization: `Bearer ${seedLogin.access_token}` } })).json()).items.find((c) => c.name === "Satış ekibi")?.conversation_id ?? null;
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
 const page = await browser.newPage({ viewport: { width: 1200, height: 760 } });
@@ -106,6 +112,49 @@ try {
   await page.getByText("Akşam çıkıyor musun?").waitFor({ timeout: 10000 });
   check("birebir konuşma mesajları yüklenir", await page.getByText("Akşam çıkıyor musun?").isVisible());
   await page.screenshot({ path: `${SHOTS}/desktop-3-direct.png` });
+
+  // @ anma: üye önerisi, anılan kişiye gönderim (karar: vurgu + anlık bildirim)
+  await group.click();
+  await page.getByTestId("message-view").waitFor();
+  await page.getByTestId("composer").fill("@Ayş");
+  await page.getByTestId("mention-option").first().waitFor({ timeout: 5000 });
+  check("@ yazınca üye önerisi çıkar", true);
+  await page.getByTestId("mention-option").first().click();
+  const anmaText = `Ayşe bunu görür müsün ${Date.now()}`;
+  await page.getByTestId("composer").fill(`@Ayşe Kaya ${anmaText}`);
+  await page.getByTestId("send").click();
+  await page.getByText(anmaText).waitFor({ timeout: 10000 });
+  const aliApi = await api("POST", "/auth/login", null, { email: "ali@demo.test", password: "demo-parola-123" });
+  const aysApi = await api("POST", "/auth/login", null, { email: "ayse@demo.test", password: "demo-parola-123" });
+  const ayseMe = await api("GET", "/users/me", aysApi.body.access_token);
+  const groupMsgs = (await api("GET", `/conversations/${groupConvId()}/messages`, aliApi.body.access_token)).body.items;
+  const anmaMsg = groupMsgs.find((m) => m.content?.endsWith(anmaText));
+  check("anma sunucuda kayıtlı (mentions)", anmaMsg?.mentions?.includes(ayseMe.body.user_id) === true);
+
+  // Alıcı kendi oturumunda anmayı vurgulu görür
+  const recvCtx = await browser.newContext();
+  const recv = await recvCtx.newPage();
+  await recv.goto(APP, { waitUntil: "networkidle" });
+  await recv.getByTestId("email").fill("ayse@demo.test");
+  await recv.getByTestId("password").fill("demo-parola-123");
+  await recv.getByTestId("login-submit").click();
+  await recv.getByTestId("conversation-item").first().waitFor({ timeout: 10000 });
+  await recv.locator('[data-testid="conversation-item"]', { hasText: "Satış ekibi" }).click();
+  await recv.getByText(anmaText).waitFor({ timeout: 10000 });
+  const highlighted = await recv.locator('[data-testid="message"][data-mention="true"]', { hasText: anmaText }).count();
+  check("alıcı anmayı vurgulu görür", highlighted > 0);
+  await recvCtx.close();
+
+  // İş paneli: ticket açılır ve listede görünür
+  await page.getByTestId("work-open").click();
+  await page.getByTestId("work-panel").waitFor({ timeout: 10000 });
+  await page.getByTestId("ticket-dept").selectOption({ index: 1 });
+  await page.getByTestId("ticket-title").fill("E2E ticket");
+  await page.getByTestId("ticket-body").fill("Bu bir uçtan uca ticket testidir.");
+  await page.getByTestId("ticket-submit").click();
+  await page.locator('[data-testid="ticket-row"]', { hasText: "E2E ticket" }).waitFor({ timeout: 10000 });
+  check("iş panelinden ticket açılır ve listelenir", true);
+  await page.locator('[data-testid="work-panel"] button', { hasText: "Kapat" }).click();
 
   // Dosya eki: yüklenir, mesaja bağlanır, indirme bağlantısı görünür (Faz 2)
   await page.setInputFiles('[data-testid="file-input"]', {

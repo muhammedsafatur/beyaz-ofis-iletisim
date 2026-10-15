@@ -27,5 +27,6 @@ export const ERROR_CODES = [
   "REASON_TOO_SHORT",
   "RATE_LIMITED",
   "INTERNAL_ERROR",
+  "CONFLICT",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

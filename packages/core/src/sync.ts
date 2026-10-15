@@ -20,7 +20,14 @@ export interface ConversationView {
   loaded: boolean;
 }
 
+export interface MentionEvent {
+  conversation_id: string;
+  message_id: string;
+}
+
 export interface SyncSnapshot {
+  // Bana yönelik anmalar (en yeni sonda). Arayüz okuduktan sonra clearMentions ile temizler.
+  mentions: MentionEvent[];
   conversations: ConversationSummary[];
   views: Record<string, ConversationView>;
   // Son görülen en yüksek updated_at (sunucu değeri). Sonraki delta bunun üzerinden istenir.
@@ -54,7 +61,9 @@ export function defaultNewId(): string {
 }
 
 export class SyncEngine {
-  private snapshot: SyncSnapshot = { conversations: [], views: {}, updatedAfter: null, lastError: null };
+  private snapshot: SyncSnapshot = { mentions: [], conversations: [], views: {}, updatedAfter: null, lastError: null };
+  private openIdsFn: () => string[] = () => [];
+  private intervalMs = 3000;
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticks = 0;
@@ -161,7 +170,13 @@ export class SyncEngine {
   }
 
   // Gönderim: iyimser ekleme. Sunucu yanıtı aynı client_message_id ile kaydı değiştirir (idempotent).
-  async send(id: string, content: string, sender: LocalMessage["sender"] = null, attachmentId?: string): Promise<void> {
+  async send(
+    id: string,
+    content: string,
+    sender: LocalMessage["sender"] = null,
+    attachmentId?: string,
+    mentions: string[] = [],
+  ): Promise<void> {
     const clientId = this.newId();
     const pendingMsg: LocalMessage = {
       message_id: `local:${clientId}`,
@@ -179,12 +194,13 @@ export class SyncEngine {
       read_count: null,
       read_by_peer: null,
       attachment: null,
+      mentions: [],
       pending: "sending",
     };
     const view = this.snapshot.views[id] ?? emptyView();
     this.setView(id, { messages: [...view.messages, pendingMsg].sort(bySeq) });
     try {
-      const saved = await this.api.sendMessage(id, clientId, content, attachmentId);
+      const saved = await this.api.sendMessage(id, clientId, content, { attachmentId, mentions });
       const current = this.snapshot.views[id] ?? emptyView();
       const rest = current.messages.filter((m) => m.client_message_id !== clientId && m.message_id !== saved.message_id);
       this.setView(id, {
@@ -216,8 +232,34 @@ export class SyncEngine {
   }
 
   start(openIds: () => string[], intervalMs = 3000): void {
+    this.openIdsFn = openIds;
+    this.intervalMs = intervalMs;
     this.stop();
     this.timer = setInterval(() => void this.tick(openIds()), intervalMs);
+  }
+
+  // Hibrit senkron: bağlantı açıkken yoklama aralığı uzar, kopunca geri döner.
+  setPollInterval(intervalMs: number): void {
+    if (intervalMs === this.intervalMs && this.timer) return;
+    this.intervalMs = intervalMs;
+    if (this.timer) this.start(this.openIdsFn, intervalMs);
+  }
+
+  // Gerçek zamanlı olay: değişikliği hemen senkronize eder. Üyelik değişimi listeyi tam yeniler.
+  async handleRealtime(event: { type: string; conversation_id?: string; message_id?: string }): Promise<void> {
+    if (event.type === "mention" && event.conversation_id && event.message_id) {
+      this.set({ mentions: [...this.snapshot.mentions, { conversation_id: event.conversation_id, message_id: event.message_id }] });
+    }
+    if (event.type === "membership.changed") {
+      await this.refreshConversations(true).catch(() => undefined);
+    }
+    if (event.type === "conversation.changed" || event.type === "membership.changed" || event.type === "mention") {
+      await this.tick(this.openIdsFn());
+    }
+  }
+
+  clearMentions(): void {
+    this.set({ mentions: [] });
   }
 
   stop(): void {
@@ -229,6 +271,6 @@ export class SyncEngine {
   reset(): void {
     this.stop();
     this.ticks = 0;
-    this.set({ conversations: [], views: {}, updatedAfter: null, lastError: null });
+    this.set({ mentions: [], conversations: [], views: {}, updatedAfter: null, lastError: null });
   }
 }
