@@ -1,5 +1,5 @@
-import type { ApiClient } from "./client.js";
-import type { ConversationSummary, Message } from "./types.js";
+import type { ApiClient } from "./client";
+import type { ConversationSummary, Message } from "./types";
 
 // Senkronizasyon motoru: sunucuyu delta ile izler (Faz 1, polling; WebSocket Faz 2).
 //  - Konuşma listesi: updated_after ile değişenler, arada tam listeleme (kapanan üyelikler için).
@@ -43,6 +43,16 @@ export interface SyncOptions {
   newId?: () => string;
 }
 
+// Ortam bağımsız istemci kimliği: randomUUID varsa onu, yoksa RFC 4122 v4 üretir.
+export function defaultNewId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export class SyncEngine {
   private snapshot: SyncSnapshot = { conversations: [], views: {}, updatedAfter: null, lastError: null };
   private listeners = new Set<() => void>();
@@ -54,7 +64,7 @@ export class SyncEngine {
     private readonly api: ApiClient,
     opts: SyncOptions = {},
   ) {
-    this.newId = opts.newId ?? (() => globalThis.crypto.randomUUID());
+    this.newId = opts.newId ?? defaultNewId;
   }
 
   getSnapshot(): SyncSnapshot {

@@ -1,8 +1,8 @@
-export * from "./domain/roles.js";
-export * from "./domain/errors.js";
-export * from "./types.js";
-export * from "./tokens.js";
-export * from "./client.js";
-export * from "./sync.js";
+export * from "./domain/roles";
+export * from "./domain/errors";
+export * from "./types";
+export * from "./tokens";
+export * from "./client";
+export * from "./sync";
 
 export const API_VERSION = "v1";

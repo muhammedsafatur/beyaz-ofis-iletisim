@@ -1,6 +1,6 @@
-import type { ErrorCode } from "./domain/errors.js";
-import type { TokenStore } from "./tokens.js";
-import type { Conversation, ConversationPage, Message, MessagePage, Tokens, UserSummary } from "./types.js";
+import type { ErrorCode } from "./domain/errors";
+import type { TokenStore } from "./tokens";
+import type { Conversation, ConversationPage, Message, MessagePage, Tokens, UserSummary } from "./types";
 
 // Sunucudan dönen kapalı katalog hatası (spec 9.1). retryAfter yalnızca 429 için dolu.
 export class ApiRequestError extends Error {

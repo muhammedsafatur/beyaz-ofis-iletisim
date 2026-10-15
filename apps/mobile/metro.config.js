@@ -11,6 +11,8 @@ config.watchFolders = [workspaceRoot];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
   path.resolve(workspaceRoot, "node_modules"),
+  // pnpm geçişli bağımlılıkları (ör. @babel/runtime) bu klasörde yayınlar.
+  path.resolve(workspaceRoot, "node_modules/.pnpm/node_modules"),
 ];
 config.resolver.disableHierarchicalLookup = true;
 

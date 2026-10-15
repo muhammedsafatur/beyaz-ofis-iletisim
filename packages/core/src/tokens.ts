@@ -1,4 +1,4 @@
-import type { Tokens } from "./types.js";
+import type { Tokens } from "./types";
 
 // Belirteç saklama arayüzü. Masaüstünde Electron safeStorage, mobilde Keychain/Keystore uygulanır (§10).
 // Düz AsyncStorage ya da localStorage kullanılmaz; bu yüzden uygulama bu arayüzü dışarıdan alır.
