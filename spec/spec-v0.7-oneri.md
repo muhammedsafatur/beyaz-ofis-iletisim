@@ -24,7 +24,7 @@
 | Ç5 Karar öncesi içerik | §5.4 adım 3, §9 | `GET /access-requests/:id`, `GET /access-requests/:id/content` | Spec §9: `GET /:id` karar verene göre içerik ya da meta döner. OpenAPI: `GET /:id` yalnızca meta, `/content` yalnızca talep edene | **Uygulandı (K3).** Yeni uç: `/targets/:departmentId/content` |
 | Ç6 Meta veri alanları | §0, §5.4 adım 4 | `AccessRequestSummary.meta` | Spec §5.4: talep edenin birimi, konuşma tipi ve adı, üye sayısı, mesaj sayısı, ilk ve son mesaj, gerekçe, hedef birim. Spec §0 bunu "OpenAPI'deki haliyle kesinleşti" diyor. OpenAPI `meta`da konuşma tipi ve talep edenin birimi yok (`UserSummary` birim taşımıyor). Gerekçe ve hedefler yalnızca detay yanıtında var | **Karar bekliyor.** Öneri: `meta`ya `conversation_type` ve `requester_department_ids` eklenir, §0 cümlesi "§5.4 listesi" olarak düzeltilir |
 | Ç7 Grup oluşturma yetkisi | §3.3, §13 | `POST /conversations` | Spec: kural yok, §13'te konu "kapandı" görünüyor. OpenAPI: "kurum politikasıyla, açık karar, şimdilik herkes" | **Karar bekliyor.** Bkz. 1.3 |
-| Ç8 Üye ekleme ve çıkarma | §5.6 | `POST` ve `DELETE /conversations/:id/members` | Spec: "yönetici tek tek ekler", hangi yönetici olduğu belirsiz. OpenAPI: eklemede grup kurucusu ya da birim kanalında birim yöneticisi, çıkarmada yetki kuralı yok | **Karar bekliyor.** Bkz. 1.3 |
+| Ç8 Üye ekleme ve çıkarma | §5.6 | `POST` ve `DELETE /conversations/:id/members` | Spec: "yönetici tek tek ekler", hangi yönetici olduğu belirsiz. OpenAPI: eklemede grup kurucusu ya da birim kanalında birim yöneticisi, çıkarmada yetki kuralı yok | **Karar verildi (kullanıcı):** grup kurucusu ve birim yöneticisi. Bkz. 1.3 |
 | Ç9 Birim kanalı | §3.3 | `POST /conversations` | Spec: `department` tipi ve birim başına bir aktif kanal. OpenAPI: yalnızca `direct` ve `group` kabul eder, kanal açan uç yok | **Karar bekliyor.** Bkz. 1.3 |
 | Ç10 Hedef birimler | §3.6, §5.4 adım 1 | `POST /access-requests` | Spec: "konuşmadaki üyelerin birimleri". OpenAPI: "konuşmadaki **aktif** üyelerin birimleri" | **Karar bekliyor.** Öneri: ayrılmış üyelerin birimleri de hedef olabilir. Bkz. 1.5 |
 | Ç11 Ticket gövdesi görünürlüğü | §5.5 | `GET /tickets/:id`, `Ticket.body` | Spec: gövde yalnızca birim yöneticisine görünür. OpenAPI: aynı, talep eden `PATCH` ile gövdeyi değiştirebiliyor ama geri okuyamıyor | **Karar bekliyor.** Öneri: gövde talep eden ve hedef birim yöneticisine görünür. Bkz. 1.5 |
@@ -82,7 +82,7 @@ Spec bu üç konuda açık bir kural koymuyor. Aşağıdakiler **öneri**.
 | A | Grupta kurucu, birim kanalında birim yöneticisi ve sistem yöneticisi. Eklenen üye için `canMessage(ekleyen, üye)` geçmelidir | Eklemede kural açık. Açık soru: kurucu ayrılırsa ekleme yetkisi kime geçer |
 | B | Yalnızca sistem yöneticisi | Basit, ama grup kurucusunun işini sistem yöneticisine taşır |
 
-**Önerilen: A.** Çıkarma yetkisi de aynı kişilerde olmalı (öneri). **Karar bekliyor.**
+**Karar verildi (kullanıcı):** Grupta grup kurucusu, birim kanalında birim yöneticisi ekler ve çıkarır. Ekleme için `canMessage(ekleyen, üye)` geçmelidir (A'nın parçası). Sistem yöneticisi bu listede yoktur. Açık alt soru: kurucu ayrılır ya da pasifleşirse yetki kime geçer.
 
 **Birim kanalı (Ç9)**
 
@@ -207,6 +207,7 @@ Etkilenen: §3.3, §3.4, §6, §9, §12; OpenAPI messages, conversations, `Messa
 
 **Önerilen: A.** Gerekçe: spec'in birim ilkesine uyar. Atanacak kişi yoksa ticket birimde bekler, bu da §5.6'daki "atanmayanlar" ifadesiyle uyumlu.
 Etkilenen: §5.6, §3.5; OpenAPI `POST /admin/users/:id/reassign`.
+**Güncel öneri (patron kararından sonra, onaylanmadı):** Ticket kararı artık kurum genelindeki patron havuzunda, birim yöneticisinde değil. Bu nedenle ticket'ı bir kişiye ya da birime bağlamaya gerek kalmadı. Öneri: `ticket_ids` kaldırılır, açık ticket'lar havuzda kalır ve herhangi bir aktif patron karar verir. Patron yoksa §5.5 gereği sistem yöneticisi meta veriyle karar verir, süre dolarsa `expired` olur. `ticket_decisions.ticket_id` üzerinde tekil kısıt eklenir, böylece B14 de kapanır. Birim yöneticisi devri yalnızca `department_managers` kaydını değiştirir.
 **Karar bekliyor.**
 
 ### K6. Hata kodu kataloğu tanımlı değil
@@ -388,7 +389,7 @@ Teknik not (spec dışı, BOSLUKLAR C): `decided_by <> requester_id` kısıtı i
 | Ç1 `company_links` alanları | B: istek `company_ids`, yanıt low/high | §3.1, §5.7 | Karar bekliyor |
 | Ç6 Meta veri alanları | `conversation_type` ve `requester_department_ids` eklenir | §0, §5.4 | Karar bekliyor |
 | Ç7 Grup oluşturma | A: her aktif çalışan, üyeler `canMessage`'dan geçer | §3.3, §13 | Karar bekliyor |
-| Ç8 Üye ekleme ve çıkarma | A: kurucu, birim yöneticisi, sistem yöneticisi | §5.6 | Karar bekliyor |
+| Ç8 Üye ekleme ve çıkarma | Grup kurucusu, birim kanalında birim yöneticisi (ekleme `canMessage` ile) | §5.6 | Karar verildi (kullanıcı) |
 | Ç9 Birim kanalı | B: sistem yöneticisi ucu | §3.3, §9 | Karar bekliyor |
 | Ç10 Hedef birimler | Ayrılmış üyelerin birimleri de hedef | §3.6, §5.4 | Karar bekliyor |
 | Ç11 Ticket gövdesi görünürlüğü | Talep eden ve birim yöneticisi | §5.5 | Karar bekliyor |

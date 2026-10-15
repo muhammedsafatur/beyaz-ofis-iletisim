@@ -251,6 +251,7 @@ paths:
     post:
       tags: [Conversations]
       summary: Gruba üye ekle (grup kurucusu ya da birim kanalında birim yöneticisi)
+      description: Eklenen her üye için canMessage(ekleyen, üye) geçmelidir (Ç8).
       requestBody:
         required: true
         content:
@@ -278,7 +279,7 @@ paths:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
     delete:
       tags: [Conversations]
-      summary: Üyeyi çıkar (sistem mesajı oluşur, mesajlar silinmez)
+      summary: "Üyeyi çıkar (sistem mesajı oluşur, mesajlar silinmez). Yetki: grup kurucusu ya da birim kanalında birim yöneticisi (Ç8)."
       responses:
         '204': { description: Çıkarıldı }
         '403': { $ref: '#/components/responses/Forbidden' }

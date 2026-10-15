@@ -202,6 +202,7 @@ Hedef birimlerden biri onaylamış, diğeri bekliyorsa talep `pending` kalır. O
 - Yeniden aktif edilince konuşmalara otomatik eklenmez, yönetici tek tek ekler.
 - Birim yöneticiliği ve açık ticket'lar sistem yöneticisi tarafından yeniden atanır. Atanmayanlar sistem yöneticisi ekranında bekler.
 - Birimden çıkarma ile pasifleştirme ayrı olaylardır. Birimden çıkarma kanal üyeliğini kendiliğinden kaldırmaz.
+- Üye ekleme ve çıkarma yetkisi (Ç8, kullanıcı kararı): Grupta grup kurucusundadır (`conversations.created_by`). Birim kanalında birim yöneticisindedir. Eklenen her üye için `canMessage(ekleyen, üye)` geçmelidir. Kurucu ayrılır ya da pasifleşirse yetkinin kime geçeceği karar bekliyor.
 
 ### 5.7 Şirketler arası bağlantı
 
