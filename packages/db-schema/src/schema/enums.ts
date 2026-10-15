@@ -1,7 +1,7 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 
-// §3.2
-export const userRole = pgEnum("user_role", ["employee", "system_admin"]);
+// §3.2. executive = patron (kurum genelinde, birime atanmaz); erişim talebi ve ticket kararı verir.
+export const userRole = pgEnum("user_role", ["employee", "system_admin", "executive"]);
 
 // §3.3
 export const conversationType = pgEnum("conversation_type", ["direct", "group", "department"]);

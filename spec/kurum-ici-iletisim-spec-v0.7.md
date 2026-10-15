@@ -10,6 +10,7 @@
 
 - **K3:** "Yönetici" burada patrondur, birim yöneticisi değildir. Patron karar öncesi içeriği `GET /access-requests/:id/targets/:departmentId/content` ile okur ve karar verir. Birim yöneticisi ve sistem yöneticisi bu uca erişemez.
 - **K4:** Delta polling için iki ayrı sayaç: `messages.change_seq` (gönderim, düzenleme, silme) ve `conversations.updated_at` (`updated_after`). `seq` boşluksuz kalır.
+- **Patron rolü (karar, uygulama tercihi):** Patron kurum genelinde tek bir roldür (`users.role = 'executive'`), birime atanmaz. Erişim talebi ve ticket kararını patron verir, karar öncesi içeriği görür. Birim yöneticisi bu iki akışta içerik görmez ve karar vermez. `department_managers` yalnızca kanal yetkisi için kalır (Ç8 hâlâ açık). Ticket kararının patrona geçmesi, kullanıcının "yönetici = patron" talimatının genellemesidir.
 
 ## 0. Değişiklik özeti (v0.5 → v0.6)
 
@@ -21,9 +22,9 @@
 ## 0a. Değişiklik özeti (v0.4 → v0.5)
 
 - **Erişim talebi yeniden yazıldı:** Talep, talep edenin seçtiği birim(ler)e gider. Seçilen her birimin yöneticisinin onayı gerekir. Hedef birimler ayrı tabloda tutulur.
-- **Birim yöneticisi yoksa:** Hedef için sistem yöneticisi, yalnızca meta veriyle karar verir.
+- **Patron yoksa:** Hedef için sistem yöneticisi, yalnızca meta veriyle karar verir.
 - **Bekleme süresi:** Karar verilmeyen talep ve ticketlar `request_expiry_hours` (varsayılan 72 saat) sonunda kapanır. Talep eden isterse yeniden açar.
-- **Ticket onayı:** Erişim talebiyle aynı kurallara bağlandı (bekleme süresi, yönetici yoksa sistem yöneticisi).
+- **Ticket onayı:** Erişim talebiyle aynı kurallara bağlandı (bekleme süresi, patron yoksa sistem yöneticisi).
 - **Kaldırılan:** Eskalasyon aşamaları ve `escalation_hours`, çünkü artık talep bir aşamadan diğerine geçmiyor, ya karar veriliyor ya da süre dolup kapanıyor.
 
 ---
@@ -40,8 +41,8 @@ Kurum içinde şirketler, birimler, lokasyonlar ve çalışanlar arasında ileti
 - Birebir ve grup konuşması, birim kanalı
 - Metin mesajı, 15 dakika içinde düzenleme ve silme, okundu bilgisi
 - Şirketler arası yazışma (sistem yöneticisinin açtığı bağlantılar)
-- Ticket açma ve birim yöneticisi onayı
-- Eski mesaj erişim talebi (birim yöneticisi onayı, süreli erişim)
+- Ticket açma ve patron onayı
+- Eski mesaj erişim talebi (patron onayı, süreli erişim)
 - Sessize alma, okunmamış sayısı
 
 ### Kapsam dışı
@@ -61,10 +62,11 @@ Kurum içinde şirketler, birimler, lokasyonlar ve çalışanlar arasında ileti
 | Kavram | Kaynak | Açıklama |
 |---|---|---|
 | Çalışan | `users.role = 'employee'` | Varsayılan |
-| Sistem yöneticisi | `users.role = 'system_admin'` | Kullanıcı, şirket, birim, lokasyon, bağlantı yönetimi. Mesaj içeriğini görmez. Birim yöneticisi olmayan hedeflerde yalnızca meta veriyle karar verir. |
-| Birim yöneticisi | `department_managers` kaydı | Birimin onay yetkisi. Birden fazla olabilir. Erişim talebi ve ticket onayı verir, bu sırada içeriği görür. |
+| Sistem yöneticisi | `users.role = 'system_admin'` | Kullanıcı, şirket, birim, lokasyon, bağlantı yönetimi. Mesaj içeriğini görmez. Patron olmayan durumda hedeflerde yalnızca meta veriyle karar verir. |
+| Patron | `users.role = 'executive'` | Kurum genelinde tek rol, birime atanmaz. Birden fazla olabilir. Erişim talebi ve ticket kararı verir, bu sırada içeriği görür. Sistem yöneticisi ve birim yöneticisi içeriği göremez. |
+| Birim yöneticisi | `department_managers` kaydı | Birimin yönetim kaydı. Erişim talebi ve ticket kararı vermez, içeriği görmez. Kanal yetkisi Ç8'e bağlı. |
 
-Yöneticilik bir kişinin özelliği değil, bir birime atanmanın sonucudur.
+Birim yöneticiliği bir birime atanmanın sonucudur. Patronluk kurum genelinde bir roldür (`users.role = 'executive'`), birime bağlı değildir.
 
 ---
 
@@ -91,7 +93,7 @@ Yöneticilik bir kişinin özelliği değil, bir birime atanmanın sonucudur.
 
 ### 3.2 Kullanıcı
 
-**users**: `user_id` (uuid, PK), `first_name`, `last_name`, `email` (benzersiz, aktif kayıtlar için partial index), `password_hash` (argon2id), `job_title`, `role` (enum: `employee`, `system_admin`), `profile_picture_url`, `is_active`, zaman damgaları, `deleted_at`
+**users**: `user_id` (uuid, PK), `first_name`, `last_name`, `email` (benzersiz, aktif kayıtlar için partial index), `password_hash` (argon2id), `job_title`, `role` (enum: `employee`, `system_admin`, `executive`), `profile_picture_url`, `is_active`, zaman damgaları, `deleted_at`
 
 Kullanıcının şirketi kolon olarak tutulmaz, birimlerinden türetilir.
 
@@ -127,7 +129,7 @@ Düzenleme geçmişi alıcıya gösterilmez. Alıcı yalnızca "düzenlendi" ya 
 **access_request_targets**: `(request_id, department_id)` PK, `status` (enum: `pending`, `approved`, `rejected`, `expired`), `decided_by` (FK, nullable), `decided_at`
 - Hedef birimler yalnızca konuşmadaki üyelerin birimleriyle sınırlıdır.
 - Kısıt: `decided_by <> requester_id`
-- Birim yöneticisi yoksa `decided_by` sistem yöneticisi olur ve kayıt `decision_basis = 'meta'` ile işaretlenir. Bu alan `access_request_targets`'a eklenir.
+- Patron yoksa `decided_by` sistem yöneticisi olur ve kayıt `decision_basis = 'meta'` ile işaretlenir. Bu alan `access_request_targets`'a eklenir.
 
 **access_log** (tüm erişim olayları): `log_id`, `conversation_id`, `user_id`, `action` (enum: `read`, `approve`, `reject`, `copy_blocked`), `request_id`, `accessed_at`
 
@@ -185,9 +187,9 @@ Hedef birimlerden biri onaylamış, diğeri bekliyorsa talep `pending` kalır. O
 
 ### 5.5 Ticket onayı
 
-- Ticket hedef birimin yöneticisine düşer.
-- Birim yöneticisi yoksa karar sistem yöneticisindedir.
-- Ticket gövdesi yalnızca birim yöneticisine görünür. Birim yöneticisi yokken karar veren sistem yöneticisi yalnızca meta veriyi görür: talep eden, hedef birim, başlık, tarih, durum. Ticket konuşma değildir, `access_log` gerektirmez, karar `ticket_decisions`'a yazılır.
+- Ticket kararı patrondadır. Birim yöneticisi ticket kararı vermez.
+- Patron yoksa karar sistem yöneticisindedir.
+- Ticket gövdesi yalnızca patrona görünür. Patron yokken karar veren sistem yöneticisi yalnızca meta veriyi görür: talep eden, hedef birim, başlık, tarih, durum. Ticket konuşma değildir, `access_log` gerektirmez, karar `ticket_decisions`'a yazılır.
 - Talep eden kendi ticket'ını onaylayamaz.
 - Karar verilmeyen ticket `expires_at` (varsayılan 72 saat) sonunda `expired` olur.
 - Ticket yalnızca karar verilmeden önce talep eden tarafından geri çekilebilir (`withdrawn`).
@@ -297,7 +299,7 @@ Hedef birimlerden biri onaylamış, diğeri bekliyorsa talep `pending` kalır. O
 - Metin mesajı, 15 dakika düzenleme ve silme, okundu bilgisi, delta ile geri doldurma (polling: `after_change_seq` ve `updated_after`)
 - Gönderme yetkisi ve şirketler arası bağlantı
 - Sessize alma, okunmamış sayısı
-- Ticket açma, birim yöneticisi onayı, 15 dakika düzenleme
+- Ticket açma, patron onayı, 15 dakika düzenleme
 - Eski mesaj erişim talebi (çok birimli onay, süreli erişim)
 - Ayrılan çalışan kuralı
 

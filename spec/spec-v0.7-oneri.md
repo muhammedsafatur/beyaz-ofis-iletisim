@@ -177,7 +177,8 @@ Etkilenen: §7, §9; OpenAPI `Message`, `Conversation.read_summary` (kaldırıl�
 Açık soru (spec'te yok): yönetici konuşmanın tamamını mı, yalnızca kendi birimindeki üyelerin mesajlarını mı görür. **Öneri:** tamamını. Talep eden onay sonrası tamamını görür ve karar bu içerik üzerinden verilir.
 Etkilenen: §5.4, §9; OpenAPI `/access-requests`.
 **Karar verildi:** Hedef yöneticisi görsün. Seçilen: A (hedef bazlı içerik ucu). Kayıt: cmsg_012ausVeVK2ZBtZmeqAcdvCXEgwA8uYyn99aUTNgs65dTA
-**Güncelleme (kullanıcı kararı):** "Yönetici" patrondur, birim yöneticisi değildir. Karar öncesi içeriği yalnızca patron okur ve karar verir. Birim yöneticisi bu akışta içerik okumaz ve karar vermez. Patronun veri modeli karar bekliyor: genel bir rol mü (`users.role`, §2'deki "yöneticilik birime atanmanın sonucudur" ilkesiyle çelişir) mi, yoksa hedef birime bağlı bir atama mı. Ticket onayında birim yöneticisi kuralının değişip değişmeyeceği de ayrıca sorulmalı.
+**Güncelleme (kullanıcı kararı):** "Yönetici" patrondur, birim yöneticisi değildir. Karar öncesi içeriği yalnızca patron okur ve karar verir. Birim yöneticisi bu akışta içerik okumaz ve karar vermez.
+**Uygulama kararı (kullanıcı talimatı: "bildiğin gibi ilerle"):** Patron kurum genelinde tek bir roldür (`users.role = 'executive'`), birime atanmaz. §2'deki "birim yöneticiliği birime atanmanın sonucudur" ilkesi birim yöneticisi için geçerli kalır. Ticket kararı da patrona geçti (aynı "yönetici = patron" kuralının genellemesi). `department_managers` kanal yetkisi için kalır, Ç8 hâlâ açık. Migration `0003_patron_role`.
 
 ### K4. Polling eski mesajlardaki düzenleme ve silmeyi yakalamıyor
 
@@ -379,7 +380,7 @@ Teknik not (spec dışı, BOSLUKLAR C): `decided_by <> requester_id` kısıtı i
 |---|---|---|---|
 | K1 Grupta `last_read_at` sızıntısı | A: yalnızca kendi kaydı dolu | §7, §9 | Karar bekliyor |
 | K2 Okundu taneciği | A: mesaj bazlı `read_count` ve `read_by_peer` | §7, §9 | Karar bekliyor |
-| K3 Karar öncesi içerik | A: hedef bazlı içerik ucu, okuyan ve karar veren patron | §5.4, §9 | Uygulandı (metin ve OpenAPI). Patronun veri modeli karar bekliyor |
+| K3 Karar öncesi içerik | A: hedef bazlı içerik ucu, okuyan ve karar veren patron (`users.role = 'executive'`) | §2, §5.4, §5.5, §9 | Uygulandı (spec v0.7, OpenAPI, şema 0003) |
 | K4 Polling delta | A: `change_seq` ayrı sayaçla, konuşma `updated_after` | §3.3, §3.4, §6, §9, §12 | Uygulandı (v0.7 kısmi, OpenAPI, şema 0002) |
 | K5 Ticket yeniden atama | A: `ticket_ids` kaldırılır, ticket birimi izler | §3.5, §5.6 | Karar bekliyor |
 | K6 Hata kodu kataloğu | A: kapalı enum | §9 | Karar bekliyor |

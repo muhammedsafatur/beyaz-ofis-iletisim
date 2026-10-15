@@ -59,7 +59,7 @@ export const accessRequestTargets = pgTable(
     status: targetStatus("status").notNull().default("pending"),
     decidedBy: uuid("decided_by").references(() => users.userId),
     decidedAt: tstz("decided_at"),
-    // content: birim yöneticisi; meta: yönetici yokken sistem yöneticisi
+    // content: patron; meta: patron yokken sistem yöneticisi
     decisionBasis: decisionBasis("decision_basis"),
   },
   (t) => [

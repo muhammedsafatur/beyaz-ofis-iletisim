@@ -444,8 +444,8 @@ paths:
         - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected, withdrawn, expired] } }
         - { name: cursor, in: query, schema: { type: string } }
       description: |
-        approver: kullanıcının yönetici olduğu birimlere gelen ticketlar.
-        Sistem yöneticisi için approver rolü yalnızca birim yöneticisi olmayan hedefleri listeler.
+        approver: patronun karar verebileceği ticketlar (kurum genelinde açık ticketlar). Birim yöneticisi approver değildir.
+        Patron yokken sistem yöneticisi için approver rolü yalnızca meta veriyle karar verilecek ticketları listeler.
       responses:
         '200':
           description: Ticketlar
@@ -485,7 +485,7 @@ paths:
       - { $ref: '#/components/parameters/TicketId' }
     get:
       tags: [Tickets]
-      summary: Ticket detayı. Gövde yalnızca birim yöneticisine döner. Sistem yöneticisine gövde yerine null döner.
+      summary: Ticket detayı. Gövde yalnızca patrona döner. Sistem yöneticisine gövde yerine null döner.
       responses:
         '200':
           description: Ticket
@@ -533,7 +533,7 @@ paths:
       - { $ref: '#/components/parameters/TicketId' }
     post:
       tags: [Tickets]
-      summary: Ticket kararı (birim yöneticisi ya da birim yöneticisi yoksa sistem yöneticisi)
+      summary: Ticket kararı (patron; patron yoksa sistem yöneticisi meta veriyle)
       requestBody:
         required: true
         content:
@@ -984,7 +984,7 @@ components:
         last_name: { type: string }
         email: { type: string, format: email }
         job_title: { type: string, nullable: true }
-        role: { type: string, enum: [employee, system_admin] }
+        role: { type: string, enum: [employee, system_admin, executive] }
         department_ids:
           type: array
           items: { type: integer }
@@ -1100,7 +1100,7 @@ components:
             body:
               type: string
               nullable: true
-              description: Yalnızca birim yöneticisine döner, sistem yöneticisine null
+              description: Yalnızca patrona döner, sistem yöneticisine null
             edit_window_closes_at: { type: string, format: date-time, nullable: true }
             decisions:
               type: array
@@ -1162,7 +1162,7 @@ components:
         department_id: { type: integer }
         status: { type: string, enum: [pending, approved, rejected, expired] }
         decided_by: { $ref: '#/components/schemas/UserSummary' }
-        decision_basis: { type: string, enum: [content, meta], description: Birim yöneticisi içerikle, sistem yöneticisi meta veriyle karar verir }
+        decision_basis: { type: string, enum: [content, meta], description: Patron içerikle, sistem yöneticisi meta veriyle karar verir }
         decided_at: { type: string, format: date-time, nullable: true }
 
     CompanyLink:
