@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
 import {
+  ApiRequestError,
   applyMention,
   connectRealtime,
   mentionSuggestions,
@@ -10,7 +11,7 @@ import {
   type LocalMessage,
   type UserSummary,
 } from "@beyaz-ofis/core";
-import { api, API_URL, engine, errorText, POLL_CONNECTED_MS, POLL_MS } from "./session";
+import { api, API_URL, engine, errorText, POLL_CONNECTED_MS, POLL_MS, tokenStore } from "./session";
 import { WorkPanel } from "./workPanel";
 
 type Me = UserSummary & { role?: string };
@@ -358,9 +359,8 @@ export default function App() {
     }
   }, [snapshot.mentions.length, me]);
 
-  async function login(email: string, password: string) {
-    await api.auth.login(email, password);
-    const user = (await api.me()) as Me;
+  // Oturum başlar: girişte ya da açılışta kayıtlı belirtecle. Sohbet senkronu ve gerçek zamanlı kanal kurulur.
+  async function startSession(user: Me) {
     setMe(user);
     await engine.refreshConversations(true);
     engine.start(() => (selectedRef.current ? [selectedRef.current] : []), POLL_MS);
@@ -373,6 +373,29 @@ export default function App() {
       onStatus: (connected) => engine.setPollInterval(connected ? POLL_CONNECTED_MS : POLL_MS),
     });
   }
+
+  async function login(email: string, password: string) {
+    await api.auth.login(email, password);
+    await startSession((await api.me()) as Me);
+  }
+
+  // Açılışta kayıtlı oturum varsa yeniden giriş istenmez. Yalnızca oturum geçersizse belirteç silinir;
+  // ağ hatasında belirteç korunur.
+  useEffect(() => {
+    void (async () => {
+      if (!(await tokenStore.load())) return;
+      let user: Me;
+      try {
+        user = (await api.me()) as Me;
+      } catch (err) {
+        if (err instanceof ApiRequestError && (err.code === "UNAUTHENTICATED" || err.code === "TOKEN_EXPIRED")) await tokenStore.clear();
+        return;
+      }
+      await startSession(user).catch(() => undefined);
+    })();
+    // Yalnızca açılışta bir kez
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function logout() {
     realtime?.close();

@@ -6,5 +6,6 @@ export * from "./client";
 export * from "./sync";
 export * from "./realtime";
 export * from "./mentions";
+export * from "./domain/labels";
 
 export const API_VERSION = "v1";

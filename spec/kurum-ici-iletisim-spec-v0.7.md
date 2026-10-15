@@ -12,7 +12,7 @@
 - **Hata kodu:** Mükerrer kayıt ve çakışmalar `CONFLICT` (409) döner.
 - **Gerçek zamanlı kanal:** Hibrit senkron. Bağlıyken yoklama 30 sn, kopunca 3 sn. Olaylar: `conversation.changed`, `membership.changed` (çıkarılan kullanıcıya, liste tam yenilenir), `mention`.
 - **@ anma:** Gruplarda şirket bağlamı yok. Anma vurgu ve anlık bildirimdir; anılan kişi sessize almış olsa da bildirim alır. Anılanlar mesajda `mentions` ile döner.
-- **Push:** Expo Push. Yalnızca WebSocket ile ulaşılamayan kullanıcılara gider. İçerik gönderilmez: "Yeni mesajınız var" ya da "Sizi bir mesajda andılar".
+- **Push:** Expo Push. Yalnızca WebSocket ile ulaşılamayan kullanıcılara gider. İçerik gönderilmez: "Yeni mesajınız var" ya da "Sizi bir mesajda andılar". Expo'nun `DeviceNotRegistered` yanıtı dönen belirteçler silinir; yanıt biçimi gerçek Expo servisinde doğrulandı.
 - **Dosya taraması:** Yerel disk + ClamAV (INSTREAM). Dosya kaydedilmeden taranır; zararlı dosya reddedilir. Üretimde `CLAMD_HOST` zorunludur.
 - **PostgreSQL testleri:** Repoya docker-compose eklendi. Testler `TEST_DATABASE_URL` ile gerçek PostgreSQL'de de koşar (her test dosyası kendi veritabanını alır).
 - **Masaüstü belirteçleri:** Electron safeStorage ile şifreli saklanır (tarayıcıda bellek içi).
@@ -435,7 +435,7 @@ Değerler kodda sabit değil, tabloda tutulur. Her değişiklik `audit_log`'a ya
 | 6 | Kanal yetkisi (Ç8) | Kapandı: grup kurucusu ve birim yöneticisi |
 | 7 | Push bildirimi sağlayıcısı | Kapandı: Expo Push (EAS projectId ve kimlik bilgileri dağıtımda eklenir) |
 | 8 | Üretim dosya deposu ve virüs taraması | Kapandı: yerel disk + ClamAV taraması (üretimde zorunlu) |
-| 9 | Ticket ve erişim talebi arayüzleri | Kısmen: masaüstünde iş paneli var; mobilde ticket ve talep ekranı yok |
+| 9 | Ticket ve erişim talebi arayüzleri | Kapandı: masaüstü ve mobil iş ekranı (ticket ve eski mesaj talebi, karar) |
 
 ---
 

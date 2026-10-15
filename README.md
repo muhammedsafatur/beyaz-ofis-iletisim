@@ -39,6 +39,7 @@ Kurum içi iletişim uygulaması. Monorepo: pnpm workspaces + Turborepo.
    cd apps/api && TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test   # gerçek PostgreSQL
    cd packages/core && npx jest     # istemci ve senkronizasyon
    cd apps/desktop && npm run e2e   # tarayıcı uçtan uca (sistem Chrome; CHROME_PATH ile yol verilebilir)
+   cd apps/desktop && npx tsc -p tsconfig.electron.json && npm run e2e:electron   # Electron penceresi: güvenli depo, oturum geri yükleme (API ve Vite açık olmalı)
    ```
 
 Üretimde `apps/api` için `DATABASE_URL` ve en az 32 karakterlik `JWT_SECRET` gerekir (bkz. `apps/api/.env.example`).

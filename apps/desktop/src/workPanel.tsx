@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { colors, radius, spacing } from "@beyaz-ofis/ui-tokens";
 import type { AccessRequestDetail, ConversationSummary, Department, TicketSummary, UserSummary } from "@beyaz-ofis/core";
+import { statusLabelTr } from "@beyaz-ofis/core";
 import { api, errorText } from "./session";
 
 // İş paneli: ticket ve erişim talepleri. Görünürlük ve karar yetkisi sunucuda belirlenir (patron, K3/K5).
@@ -99,7 +100,7 @@ function TicketTab({ me }: { me: Me }) {
         <ul data-testid="ticket-list" style={styles.list}>
           {mine.map((t) => (
             <li key={t.ticket_id} data-testid="ticket-row">
-              {t.title} · <span style={{ color: colors.textMuted }}>{statusTr(t.status)}</span>
+              {t.title} · <span style={{ color: colors.textMuted }}>{statusLabelTr(t.status)}</span>
             </li>
           ))}
           {mine.length === 0 && <li style={{ color: colors.textMuted }}>Henüz ticket yok.</li>}
@@ -223,8 +224,8 @@ function RequestTab({ me, conversations }: { me: Me; conversations: Conversation
         <ul data-testid="request-list" style={styles.list}>
           {mine.map((r) => (
             <li key={r.request_id} data-testid="request-row">
-              {r.conversation_name ?? "Birebir konuşma"} · {statusTr(r.status)} ·{" "}
-              {r.targets.map((t) => `${deptName(t.department_id)}: ${statusTr(t.status)}`).join(", ")}
+              {r.conversation_name ?? "Birebir konuşma"} · {statusLabelTr(r.status)} ·{" "}
+              {r.targets.map((t) => `${deptName(t.department_id)}: ${statusLabelTr(t.status)}`).join(", ")}
             </li>
           ))}
           {mine.length === 0 && <li style={{ color: colors.textMuted }}>Henüz talep yok.</li>}
@@ -258,23 +259,6 @@ function RequestTab({ me, conversations }: { me: Me; conversations: Conversation
       )}
     </div>
   );
-}
-
-function statusTr(s: string): string {
-  switch (s) {
-    case "pending":
-      return "beklemede";
-    case "approved":
-      return "onaylandı";
-    case "rejected":
-      return "reddedildi";
-    case "withdrawn":
-      return "geri çekildi";
-    case "expired":
-      return "süresi doldu";
-    default:
-      return s;
-  }
 }
 
 

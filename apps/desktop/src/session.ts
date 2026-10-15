@@ -7,7 +7,9 @@ export const POLL_MS = 3000;
 // Gerçek zamanlı bağlantı açıkken yedek yoklama bu aralıkta sürer (hibrit senkron).
 export const POLL_CONNECTED_MS = 30000;
 
-export const api = createApiClient({ baseUrl: API_URL, tokens: desktopTokenStore() });
+// Tek belirteç deposu: istemci ve açılış kontrolü aynı örneği kullanır.
+export const tokenStore = desktopTokenStore();
+export const api = createApiClient({ baseUrl: API_URL, tokens: tokenStore });
 export const engine = new SyncEngine(api);
 
 export function errorText(err: unknown): string {

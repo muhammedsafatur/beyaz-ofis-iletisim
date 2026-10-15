@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.electron.json && vite build",
     "start": "electron .",
     "typecheck": "tsc --noEmit",
-    "e2e": "node e2e/desktop-e2e.mjs"
+    "e2e": "node e2e/desktop-e2e.mjs",
+    "e2e:electron": "node e2e/electron-e2e.mjs"
   },
   "dependencies": {
     "@beyaz-ofis/core": "workspace:*",

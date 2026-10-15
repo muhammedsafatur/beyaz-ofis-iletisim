@@ -154,6 +154,38 @@ try {
   await page.getByTestId("ticket-submit").click();
   await page.locator('[data-testid="ticket-row"]', { hasText: "E2E ticket" }).waitFor({ timeout: 10000 });
   check("iş panelinden ticket açılır ve listelenir", true);
+  // Erişim talebi: çalışan talep eder (hedef İK), patron kuyruktan onaylar (K3)
+  const reason = `Toplantı notları için erişim gerekiyor ${Date.now()}`;
+  await page.getByTestId("work-tab-request").click();
+  await page.getByTestId("request-conversation").selectOption({ label: "Satış ekibi" });
+  await page.getByLabel("İnsan Kaynakları").check();
+  await page.getByTestId("request-reason").fill(reason);
+  await page.getByTestId("request-submit").click();
+  await page.locator('[data-testid="request-row"]', { hasText: "İnsan Kaynakları: beklemede" }).first().waitFor({ timeout: 10000 });
+  check("erişim talebi oluşturulur ve beklemede görünür", true);
+
+  const bossCtx = await browser.newContext();
+  const boss = await bossCtx.newPage();
+  await boss.goto(APP, { waitUntil: "networkidle" });
+  await boss.getByTestId("email").fill("patron@demo.test");
+  await boss.getByTestId("password").fill("demo-parola-123");
+  await boss.getByTestId("login-submit").click();
+  await boss.getByTestId("sidebar").waitFor({ timeout: 20000 });
+  await boss.getByTestId("work-open").click();
+  await boss.getByTestId("work-tab-request").click();
+  const queued = boss.locator('[data-testid="request-queue-row"]', { hasText: reason });
+  await queued.waitFor({ timeout: 10000 });
+  check("patron karar kuyruğunda talebi görür", true);
+  await queued.locator('[data-testid="request-approve"]').click();
+  await queued.waitFor({ state: "detached", timeout: 10000 });
+  check("patron onaylar; talep kuyruktan düşer", true);
+  await bossCtx.close();
+
+  await page.locator('[data-testid="work-panel"] button', { hasText: "Kapat" }).click();
+  await page.getByTestId("work-open").click();
+  await page.getByTestId("work-tab-request").click();
+  await page.locator('[data-testid="request-row"]', { hasText: "İnsan Kaynakları: onaylandı" }).first().waitFor({ timeout: 10000 });
+  check("çalışan talebinin onaylandığını görür", true);
   await page.locator('[data-testid="work-panel"] button', { hasText: "Kapat" }).click();
 
   // Dosya eki: yüklenir, mesaja bağlanır, indirme bağlantısı görünür (Faz 2)
