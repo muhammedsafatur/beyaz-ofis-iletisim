@@ -409,8 +409,8 @@ Değerler kodda sabit değil, tabloda tutulur. Her değişiklik `audit_log`'a ya
 - Eski mesaj erişim talebi (çok birimli onay, süreli erişim, yeniden açma, kopyalama olayı)
 - Ayrılan çalışan kuralı
 
-**Faz 2** (durum: push hariç uygulandı, bkz. §0b)
-- WebSocket realtime (uygulandı), push bildirim (uygulanmadı, sağlayıcı kararı bekliyor)
+**Faz 2** (durum: uygulandı, bkz. §0b)
+- WebSocket realtime (uygulandı), push bildirim (Expo Push, uygulandı)
 - Dosya ekleri (uygulandı, yerel depo), ticket yorumları (uygulandı)
 - Audit log ekranı (uygulandı: API ve masaüstü paneli, yalnızca sistem yöneticisi)
 
@@ -450,4 +450,4 @@ Değerler kodda sabit değil, tabloda tutulur. Her değişiklik `audit_log`'a ya
 7. Erişim talebi endpoint'leri.
 8. `packages/core` sync motoru, desktop üzerinden test edilir.
 9. Mobil istemci aynı core üzerine kurulur.
-10. Faz 2 (push hariç uygulandı; push sağlayıcısı kararı bekliyor).
+10. Faz 2 uygulandı (push: Expo Push, bkz. §0b).

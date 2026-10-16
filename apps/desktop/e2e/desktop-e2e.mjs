@@ -149,10 +149,11 @@ try {
   await page.getByTestId("work-open").click();
   await page.getByTestId("work-panel").waitFor({ timeout: 10000 });
   await page.getByTestId("ticket-dept").selectOption({ index: 1 });
-  await page.getByTestId("ticket-title").fill("E2E ticket");
+  const ticketTitle = `E2E ticket ${Date.now()}`;
+  await page.getByTestId("ticket-title").fill(ticketTitle);
   await page.getByTestId("ticket-body").fill("Bu bir uçtan uca ticket testidir.");
   await page.getByTestId("ticket-submit").click();
-  await page.locator('[data-testid="ticket-row"]', { hasText: "E2E ticket" }).waitFor({ timeout: 10000 });
+  await page.locator('[data-testid="ticket-row"]', { hasText: ticketTitle }).waitFor({ timeout: 10000 });
   check("iş panelinden ticket açılır ve listelenir", true);
   // Erişim talebi: çalışan talep eder (hedef İK), patron kuyruktan onaylar (K3)
   const reason = `Toplantı notları için erişim gerekiyor ${Date.now()}`;
@@ -189,14 +190,17 @@ try {
   await page.locator('[data-testid="work-panel"] button', { hasText: "Kapat" }).click();
 
   // Dosya eki: yüklenir, mesaja bağlanır, indirme bağlantısı görünür (Faz 2)
+  // Ad çalıştırmaya özgüdür: önceki çalıştırmaların ekleri aynı konuşmada kalabilir
+  const fileName = `not-${Date.now()}.txt`;
   await page.setInputFiles('[data-testid="file-input"]', {
-    name: "not.txt",
+    name: fileName,
     mimeType: "text/plain",
     buffer: Buffer.from("merhaba dosya"),
   });
-  await page.getByTestId("attachment-link").first().waitFor({ timeout: 15000 });
-  const linkText = await page.getByTestId("attachment-link").first().textContent();
-  check("dosya eki mesaja bağlanır ve görünür", linkText?.includes("not.txt") === true, linkText?.trim());
+  const uploadedLink = page.getByTestId("attachment-link").filter({ hasText: fileName });
+  await uploadedLink.waitFor({ timeout: 15000 });
+  const linkText = await uploadedLink.textContent();
+  check("dosya eki mesaja bağlanır ve görünür", linkText?.includes(fileName) === true, linkText?.trim());
 
   // Çıkış
   await page.getByTestId("logout").click();

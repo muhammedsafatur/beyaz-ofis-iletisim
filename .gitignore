@@ -15,3 +15,7 @@ coverage/
 # Expo prebuild: yerel native projeler üretilir, repoya girmez
 apps/mobile/android/
 apps/mobile/ios/
+
+# Expo dışa aktarım çıktıları (README: export komutları)
+.export-web/
+.export-mobile/

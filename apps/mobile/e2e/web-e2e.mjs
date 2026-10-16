@@ -68,14 +68,17 @@ check("anma sunucuda kayıtlı (mentions)", sent?.mentions?.includes(ayseMe.body
 
 // Ek: dosya seçilir, yüklenir, bağlı mesajda görünür; indirme bağlantısı içeriği aynen verir
 const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByTestId("attach").click()]);
-await chooser.setFiles({ name: "mobil-not.txt", mimeType: "text/plain", buffer: Buffer.from("mobil ek icerigi") });
-await page.getByTestId("attachment-link").first().waitFor({ timeout: 15000 });
+// Aynı konuşmada önceki çalıştırmaların ekleri de olabilir; ad çalıştırmaya özgüdür ve yalnızca bu ek seçilir
+const fileName = `mobil-not-${Date.now()}.txt`;
+await chooser.setFiles({ name: fileName, mimeType: "text/plain", buffer: Buffer.from("mobil ek icerigi") });
+const uploadedLink = page.getByTestId("attachment-link").filter({ hasText: fileName });
+await uploadedLink.waitFor({ timeout: 15000 });
 check("mobil: ek yüklenir ve mesaja bağlı görünür", true);
 // Tarayıcı dosyayı indirir (Content-Disposition: attachment); indirme isteğinin adresinden içerik doğrulanır
 const [popup, downloadReq] = await Promise.all([
   ctx.waitForEvent("page"),
   ctx.waitForEvent("request", (r) => r.url().includes("/download")),
-  page.getByTestId("attachment-link").first().click(),
+  uploadedLink.click(),
 ]);
 const downloaded = await (await fetch(downloadReq.url())).text();
 check("mobil: ek indirme bağlantısı içeriği aynen verir", downloaded.includes("mobil ek icerigi"));
