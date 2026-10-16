@@ -38,6 +38,9 @@ jobs:
 
       - name: Android projesi (prebuild)
         working-directory: apps/mobile
+        # Test API'si düz HTTP ile çalışır; yalnızca bu test derlemesinde cleartext'e izin verilir.
+        env:
+          E2E_CLEARTEXT: "1"
         run: npx expo prebuild --platform android --clean --no-install
 
       - name: Release APK (yalnızca x86_64, emülatör ile aynı mimari)

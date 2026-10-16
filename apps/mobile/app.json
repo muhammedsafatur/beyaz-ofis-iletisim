@@ -13,6 +13,6 @@
     "android": {
       "package": "com.beyazofis.mobile"
     },
-    "plugins": ["./plugins/withMonorepoBundle"]
+    "plugins": ["./plugins/withMonorepoBundle", "./plugins/withE2eCleartext"]
   }
 }
