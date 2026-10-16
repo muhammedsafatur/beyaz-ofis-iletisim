@@ -78,6 +78,7 @@ appId: com.beyazofis.mobile
 - tapOn:
     id: "request-reason"
 - inputText: "Native talep icin erisim gerekiyor, toplanti notlari."
+- hideKeyboard
 - tapOn:
     id: "request-submit"
 - extendedWaitUntil:
