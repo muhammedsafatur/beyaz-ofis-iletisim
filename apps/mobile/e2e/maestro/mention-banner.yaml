@@ -2,8 +2,7 @@
 # banner'a dokunmak anılan konuşmayı açar. Anmayı tetikleyen adım dışarıdan yapılır (bkz. e2e/trigger-mention.mjs).
 appId: com.beyazofis.mobile
 ---
-- launchApp:
-    clearState: true
+# Uygulama çalıştırmadan önce adb ile yeniden kurulup başlatılır (bkz. README); Maestro launchApp MIUI'de engelleniyor.
 - extendedWaitUntil:
     visible:
       id: "email"

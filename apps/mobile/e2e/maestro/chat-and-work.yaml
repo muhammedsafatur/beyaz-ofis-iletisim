@@ -4,8 +4,8 @@
 #      seçimleriyle (öneri, birim çipi) girilir. Beklenen metinler regex olarak eşleşir (tam eşleşme).
 appId: com.beyazofis.mobile
 ---
-- launchApp:
-    clearState: true
+# Uygulama çalıştırmadan önce adb ile yeniden kurulup başlatılır (bkz. README). Maestro launchApp MIUI'de
+# engelleniyor (Permission Denied Activity), bu yüzden burada başlatılmaz; clearState da çalışmaz.
 - extendedWaitUntil:
     visible:
       id: "email"
