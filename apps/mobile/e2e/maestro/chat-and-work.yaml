@@ -60,6 +60,8 @@ appId: com.beyazofis.mobile
 - tapOn:
     id: "ticket-body"
 - inputText: "Bu bir Android uygulamasindan acilan ticket testidir."
+# Klavye, gönder düğmesini örtüyor; önce kapatılır.
+- hideKeyboard
 - tapOn:
     id: "ticket-submit"
 - extendedWaitUntil:
