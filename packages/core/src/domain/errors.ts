@@ -1,0 +1,32 @@
+// K6: kapalı hata kodu kataloğu. OpenAPI components.schemas.Error.code ile aynı liste olmalı.
+// INVITATION_INVALID: Ç16 davet akışı için eklendi (kullanılmış, süresi dolmuş ya da geçersiz davet).
+export const ERROR_CODES = [
+  "VALIDATION_FAILED",
+  "UNAUTHENTICATED",
+  "TOKEN_EXPIRED",
+  "REFRESH_TOKEN_REUSED",
+  "INVITATION_INVALID",
+  "FORBIDDEN",
+  "FORBIDDEN_NOT_MEMBER",
+  "ACCOUNT_INACTIVE",
+  "TARGET_INACTIVE",
+  "NO_COMPANY_LINK",
+  "COMPANY_LINK_REVOKED",
+  "SELF_DECISION_FORBIDDEN",
+  "CONTENT_NOT_VISIBLE",
+  "NOT_FOUND",
+  "CONTEXT_CHOICE_REQUIRED",
+  "CONTEXT_LOCKED",
+  "ALREADY_MEMBER",
+  "EDIT_WINDOW_CLOSED",
+  "MESSAGE_DELETED",
+  "REQUEST_NOT_PENDING",
+  "DEPARTMENT_CHANNEL_EXISTS",
+  "ACCESS_WINDOW_EXPIRED",
+  "TARGET_NOT_IN_CONVERSATION",
+  "REASON_TOO_SHORT",
+  "RATE_LIMITED",
+  "INTERNAL_ERROR",
+  "CONFLICT",
+] as const;
+export type ErrorCode = (typeof ERROR_CODES)[number];

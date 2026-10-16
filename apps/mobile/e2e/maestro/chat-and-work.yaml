@@ -1,0 +1,86 @@
+# Android (native) uçtan uca: giriş, grup sohbeti, @ anma önerisi ve gönderimi, iş ekranında ticket ve talep.
+# Ön koşul: API 3000'de, adb reverse tcp:3000 tcp:3000 (gerçek cihazda localhost), uygulama kurulu (release APK; Metro gerekmez).
+# Not: Maestro metin girişinde yalnızca ASCII güvenilir; türkçe karakterli veriler uygulamanın kendi
+#      seçimleriyle (öneri, birim çipi) girilir. Beklenen metinler regex olarak eşleşir (tam eşleşme).
+appId: com.beyazofis.mobile
+---
+# Uygulama çalıştırmadan önce adb ile yeniden kurulup başlatılır (bkz. README). Maestro launchApp MIUI'de
+# engelleniyor (Permission Denied Activity), bu yüzden burada başlatılmaz; clearState da çalışmaz.
+- extendedWaitUntil:
+    visible:
+      id: "email"
+    timeout: 60000
+- tapOn:
+    id: "email"
+- inputText: "ali@demo.test"
+- tapOn:
+    id: "password"
+- inputText: "demo-parola-123"
+- tapOn:
+    id: "login-submit"
+- extendedWaitUntil:
+    visible: "Satış ekibi"
+    timeout: 30000
+
+# Grup sohbeti ve @ anma
+- tapOn: "Satış ekibi"
+- tapOn:
+    id: "composer"
+- inputText: "@Kay"
+- extendedWaitUntil:
+    visible:
+      id: "mention-option"
+    timeout: 15000
+- tapOn:
+    id: "mention-option"
+- inputText: "Native anma testi"
+- tapOn:
+    id: "send"
+- extendedWaitUntil:
+    visible: ".*Native anma testi"
+    timeout: 15000
+
+# Konuşma listesine dön, iş ekranına gir
+- tapOn:
+    id: "back"
+- tapOn:
+    id: "work-open"
+- extendedWaitUntil:
+    visible:
+      id: "work-tab-ticket"
+    timeout: 15000
+
+# Ticket: birim seç, başlık ve açıklama yaz, aç
+- tapOn:
+    id: "ticket-dept"
+    text: "İnsan Kaynakları"
+- tapOn:
+    id: "ticket-title"
+- inputText: "Native ticket testi"
+- tapOn:
+    id: "ticket-body"
+- inputText: "Bu bir Android uygulamasindan acilan ticket testidir."
+# Klavye, gönder düğmesini örtüyor; önce kapatılır.
+- hideKeyboard
+- tapOn:
+    id: "ticket-submit"
+- extendedWaitUntil:
+    visible: ".*Native ticket testi · beklemede"
+    timeout: 15000
+
+# Eski mesaj talebi: konuşma ve birim seç, gerekçe yaz, gönder
+- tapOn:
+    id: "work-tab-request"
+- tapOn: "Satış ekibi"
+- tapOn:
+    id: "request-dept"
+    text: "İnsan Kaynakları"
+- tapOn:
+    id: "request-reason"
+- inputText: "Native talep icin erisim gerekiyor, toplanti notlari."
+- hideKeyboard
+- tapOn:
+    id: "request-submit"
+- extendedWaitUntil:
+    visible: ".*İnsan Kaynakları: beklemede"
+    timeout: 15000

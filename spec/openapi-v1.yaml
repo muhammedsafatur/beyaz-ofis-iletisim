@@ -3,9 +3,9 @@ info:
   title: Kurum İçi İletişim API
   version: 1.0.0
   description: |
-    MVP (Faz 1) API sözleşmesi. Doküman sürümü: kurum-ici-iletisim-spec-v0.5.md.
+    MVP (Faz 1) API sözleşmesi. Doküman sürümü: kurum-ici-iletisim-spec-v0.7.md (Ç2).
     Yetki kontrolü her istekte sunucuda yapılır. İstemci yetkiye güvenmez.
-    Hata formatı: { error: { code, message } }.
+    Hata formatı: { error: { code, message } }. Kodlar kapalı katalogdur (K6), bkz. components.schemas.Error.
 servers:
   - url: https://api.example.internal/api/v1
 security:
@@ -49,7 +49,7 @@ paths:
   /auth/refresh:
     post:
       tags: [Auth]
-      summary: Access token yenile, refresh token döner (rotation)
+      summary: Access token yenile, refresh token döner (rotation). Rotate edilmiş token tekrar gelirse aile iptal edilir (REFRESH_TOKEN_REUSED).
       security: []
       requestBody:
         required: true
@@ -71,9 +71,49 @@ paths:
   /auth/logout:
     post:
       tags: [Auth]
-      summary: Oturumu kapat
+      summary: Bu oturumu kapat. Yalnızca gönderilen refresh token'ın ailesi kapanır (B4).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
       responses:
         '204': { description: Kapatıldı }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout-all:
+    post:
+      tags: [Auth]
+      summary: Tüm cihazlardan çıkış. Kullanıcının tüm refresh token aileleri kapanır (B4).
+      responses:
+        '204': { description: Kapatıldı }
+
+  /auth/accept-invite:
+    post:
+      tags: [Auth]
+      summary: Davet token'ı ile parola belirle. Token tek kullanımlık ve süreli (Ç16).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        '204': { description: Parola belirlendi, hesap aktif }
+        '400':
+          description: Davet geçersiz, kullanılmış ya da süresi dolmuş
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /users/me:
     get:
@@ -87,7 +127,7 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
     patch:
       tags: [Users]
-      summary: Profil güncelle (ad, soyad, unvan, profil fotoğrafı, sessize alma dışındaki alanlar)
+      summary: Profil güncelle. Yalnızca unvan ve profil fotoğrafı. Ad soyad yalnızca sistem yöneticisi tarafından değişir (Ç17).
       requestBody:
         required: true
         content:
@@ -126,10 +166,6 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/UserSummary' }
                   next_cursor: { type: string, nullable: true }
-
-  /users/{userId}/mute-state:
-    parameters:
-      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
 
   /companies:
     get:
@@ -176,9 +212,13 @@ paths:
     get:
       tags: [Conversations]
       summary: Konuşma listesi (son mesaj tarihine göre sıralı, okunmamış sayısı dahil)
+      description: |
+        updated_after verilirse yalnızca bu andan sonra güncellenen konuşmalar döner (K4 delta).
+        Okundu ve üyelik olayları da updated_at değerini günceller.
       parameters:
         - { name: cursor, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: updated_after, in: query, schema: { type: string, format: date-time } }
       responses:
         '200':
           description: Konuşmalar
@@ -195,9 +235,9 @@ paths:
       tags: [Conversations]
       summary: Konuşma oluştur (birebir, grup)
       description: |
-        Birebir konuşmada canMessage kontrolü yapılır. Şirketler arası ise company_context_id
-        seçimi zorunludur ya da tek bağlantı otomatik seçilir. Grup oluşturma yetkisi kurum politikasıyla
-        belirlenir (açık karar, şimdilik herkes).
+        Birebir konuşma için canMessage kontrolü yapılır. Aynı çift ve bağlam için aktif konuşma varsa o döner (200), yoksa oluşturulur (201). Ç24.
+        Grup oluşturma: her aktif çalışan (Ç7). Eklenen her üye için canMessage geçmelidir.
+        Şirketler arası ise company_context_id seçimi zorunludur ya da tek bağlantı otomatik seçilir.
       requestBody:
         required: true
         content:
@@ -214,8 +254,13 @@ paths:
                   items: { type: string, format: uuid }
                 company_context_id: { type: integer, nullable: true }
       responses:
+        '200':
+          description: Birebir konuşma zaten var, mevcut konuşma döner
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
         '201':
-          description: Oluşturuldu (birebir ise mevcut konuşma döner)
+          description: Oluşturuldu
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Conversation' }
@@ -246,7 +291,8 @@ paths:
       - { $ref: '#/components/parameters/ConversationId' }
     post:
       tags: [Conversations]
-      summary: Gruba üye ekle (grup kurucusu ya da birim kanalında birim yöneticisi)
+      summary: "Üye ekle. Grupta grup kurucusu, birim kanalında birim yöneticisi (Ç8)."
+      description: Eklenen her üye için canMessage(ekleyen, üye) geçmelidir.
       requestBody:
         required: true
         content:
@@ -274,7 +320,7 @@ paths:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
     delete:
       tags: [Conversations]
-      summary: Üyeyi çıkar (sistem mesajı oluşur, mesajlar silinmez)
+      summary: "Üyeyi çıkar (sistem mesajı oluşur, mesajlar silinmez). Yetki: grup kurucusu ya da birim kanalında birim yöneticisi (Ç8)."
       responses:
         '204': { description: Çıkarıldı }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -284,7 +330,7 @@ paths:
       - { $ref: '#/components/parameters/ConversationId' }
     post:
       tags: [Conversations]
-      summary: Okundu olarak işaretle (last_read_at güncellenir)
+      summary: Okundu olarak işaretle (last_read_at güncellenir). Gövdesiz (K2 açık notu).
       responses:
         '204': { description: İşaretlendi }
 
@@ -311,12 +357,16 @@ paths:
       - { $ref: '#/components/parameters/ConversationId' }
     get:
       tags: [Messages]
-      summary: Mesaj listesi (before_seq ile geriye, after_seq ile yeniden bağlanmada ileri doldurma)
+      summary: Mesaj listesi (before_seq ile geriye, after_seq ile yeni mesajlar, after_change_seq ile değişenler)
       parameters:
         - { name: before_seq, in: query, schema: { type: integer, format: int64 } }
         - { name: after_seq, in: query, schema: { type: integer, format: int64 } }
+        - { name: after_change_seq, in: query, description: 'Yeni, düzenlenmiş ve silinmiş mesajları change_seq sırasıyla döner (K4)', schema: { type: integer, format: int64 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
-      description: before_seq ve after_seq birlikte kullanılamaz.
+      description: |
+        before_seq, after_seq ve after_change_seq birlikte kullanılamaz.
+        Hiçbiri yoksa en yeni limit mesaj döner (Ç23).
+        Delta polling istemcisi after_change_seq ile son gördüğü change_seq değerinden devam eder.
       responses:
         '200':
           description: Mesajlar, seq'e göre sıralı
@@ -333,7 +383,7 @@ paths:
     post:
       tags: [Messages]
       summary: Mesaj gönder (idempotent)
-      description: Aynı client_message_id ile tekrar gelen istek, ilk mesajın sonucunu döner.
+      description: Aynı client_message_id ile tekrar gelen istek, ilk mesajın sonucunu döner. Hız sınırı 60/dakika (K7).
       requestBody:
         required: true
         content:
@@ -344,6 +394,12 @@ paths:
               properties:
                 client_message_id: { type: string, format: uuid }
                 content: { type: string, minLength: 1, maxLength: 4000 }
+                attachment_id: { type: string, format: uuid, description: Faz 2. Önceden yüklenmiş ve bu konuşmaya ait, henüz bağlanmamış ek. }
+                mentions:
+                  type: array
+                  maxItems: 20
+                  items: { type: string, format: uuid }
+                  description: "@ anma (karar). Yalnızca konuşmanın aktif üyeleri anılabilir; anılanlara mention olayı ve push gider."
       responses:
         '201':
           description: Kaydedildi
@@ -356,6 +412,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Message' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /messages/{messageId}:
     parameters:
@@ -437,8 +494,8 @@ paths:
         - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected, withdrawn, expired] } }
         - { name: cursor, in: query, schema: { type: string } }
       description: |
-        approver: kullanıcının yönetici olduğu birimlere gelen ticketlar.
-        Sistem yöneticisi için approver rolü yalnızca birim yöneticisi olmayan hedefleri listeler.
+        approver: patronun karar verebileceği ticketlar (kurum genelinde açık ticketlar). Birim yöneticisi approver değildir.
+        Patron yokken sistem yöneticisi için approver rolü yalnızca meta veriyle karar verilecek ticketları listeler.
       responses:
         '200':
           description: Ticketlar
@@ -453,15 +510,16 @@ paths:
                   next_cursor: { type: string, nullable: true }
     post:
       tags: [Tickets]
-      summary: Ticket aç
+      summary: Ticket aç (idempotent, client_request_id ile). Hız sınırı 20/saat (K7).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [target_department_id, title, body]
+              required: [client_request_id, target_department_id, title, body]
               properties:
+                client_request_id: { type: string, format: uuid, description: İstemci üretir (Ç25) }
                 target_department_id: { type: integer }
                 title: { type: string, minLength: 3, maxLength: 160 }
                 body: { type: string, minLength: 10, maxLength: 8000 }
@@ -471,14 +529,20 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Ticket' }
+        '200':
+          description: Aynı client_request_id ile daha önce açılmış, mevcut ticket döner
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /tickets/{ticketId}:
     parameters:
       - { $ref: '#/components/parameters/TicketId' }
     get:
       tags: [Tickets]
-      summary: Ticket detayı. Gövde yalnızca birim yöneticisine döner. Sistem yöneticisine gövde yerine null döner.
+      summary: Ticket detayı. Gövde talep eden ve patrona döner, diğerlerine null (Ç11).
       responses:
         '200':
           description: Ticket
@@ -489,7 +553,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [Tickets]
-      summary: Ticket düzenle (yalnızca talep eden, açıldıktan sonra 15 dk, karar verilmeden önce)
+      summary: "Ticket düzenle. Yalnızca talep eden, karar verilmeden önce ve açıldıktan sonra 15 dk içinde (Ç12). Önceki hal ticket_revisions'a yazılır (B5)."
       requestBody:
         required: true
         content:
@@ -521,12 +585,27 @@ paths:
               schema: { $ref: '#/components/schemas/Ticket' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /tickets/{ticketId}/reopen:
+    parameters:
+      - { $ref: '#/components/parameters/TicketId' }
+    post:
+      tags: [Tickets]
+      summary: Süresi dolmuş (expired) ticket'ı yeniden aç (yalnızca talep eden). Yeni kayıt reopened_from ile bağlanır (Ç14).
+      responses:
+        '201':
+          description: Yeni ticket oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /tickets/{ticketId}/decision:
     parameters:
       - { $ref: '#/components/parameters/TicketId' }
     post:
       tags: [Tickets]
-      summary: Ticket kararı (birim yöneticisi ya da birim yöneticisi yoksa sistem yöneticisi)
+      summary: Ticket kararı (patron; patron yoksa sistem yöneticisi meta veriyle). Ticket başına tek karar (K5).
       requestBody:
         required: true
         content:
@@ -575,18 +654,20 @@ paths:
                   next_cursor: { type: string, nullable: true }
     post:
       tags: [AccessRequests]
-      summary: Erişim talebi oluştur
+      summary: Erişim talebi oluştur (idempotent, client_request_id ile)
       description: |
-        target_department_ids yalnızca konuşmadaki aktif üyelerin birimleriyle sınırlıdır.
+        target_department_ids yalnızca konuşmadaki üyelerin birimleriyle sınırlıdır. Ayrılmış üyelerin birimleri de hedef olabilir (Ç10).
         Her hedef için ayrı karar kaydı oluşur. Talep sunucuda expires_at (varsayılan 72 saat) ile açılır.
+        Gerekçe en az 20 karakterdir (Ç26).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [conversation_id, reason, target_department_ids]
+              required: [client_request_id, conversation_id, reason, target_department_ids]
               properties:
+                client_request_id: { type: string, format: uuid, description: İstemci üretir (Ç25) }
                 conversation_id: { type: string, format: uuid }
                 reason: { type: string, minLength: 20, maxLength: 1000 }
                 target_department_ids:
@@ -596,6 +677,11 @@ paths:
       responses:
         '201':
           description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRequest' }
+        '200':
+          description: Aynı client_request_id ile daha önce açılmış, mevcut talep döner
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AccessRequest' }
@@ -611,7 +697,7 @@ paths:
       - { $ref: '#/components/parameters/RequestId' }
     get:
       tags: [AccessRequests]
-      summary: Talep detayı. Meta veri herkese, içerik yalnızca talep edene ve ilgili hedef kararına göre değil, ayrı endpoint'te döner.
+      summary: Talep detayı (yalnızca meta veri). İçerik ayrı endpoint'lerde döner.
       responses:
         '200':
           description: Talep detayı (meta veri)
@@ -627,7 +713,7 @@ paths:
       - { name: departmentId, in: path, required: true, schema: { type: integer } }
     post:
       tags: [AccessRequests]
-      summary: Hedef birim kararı (birim yöneticisi ya da yönetici yoksa sistem yöneticisi meta veriyle)
+      summary: Hedef kararı (patron; patron yoksa sistem yöneticisi meta veriyle). Birim yöneticisi karar veremez.
       requestBody:
         required: true
         content:
@@ -665,6 +751,41 @@ paths:
               schema: { $ref: '#/components/schemas/AccessRequest' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /access-requests/{requestId}/reopen:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+    post:
+      tags: [AccessRequests]
+      summary: Süresi dolmuş (expired) talebi yeniden aç (yalnızca talep eden). Yeni kayıt reopened_from ile bağlanır (Ç14).
+      responses:
+        '201':
+          description: Yeni talep oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /access-requests/{requestId}/events:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+    post:
+      tags: [AccessRequests]
+      summary: "İstemci olayı bildirir (Ç15). Kayıt istemci beyanıdır, sahte ya da eksik olabilir. İstemci başına hız sınırı uygulanır."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [copy_blocked] }
+      responses:
+        '204': { description: Kaydedildi (access_log) }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
   /access-requests/{requestId}/content:
     parameters:
       - { $ref: '#/components/parameters/RequestId' }
@@ -693,10 +814,42 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /access-requests/{requestId}/targets/{departmentId}/content:
+    parameters:
+      - { $ref: '#/components/parameters/RequestId' }
+      - { name: departmentId, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [AccessRequests]
+      summary: Patron karar öncesi içeriği okur (K3). Yalnızca patron, hedef pending iken. Her çağrı access_log'a yazılır.
+      description: |
+        "Yönetici" burada patrondur. Birim yöneticisi ve sistem yöneticisi bu uca erişemez (sistem yöneticisi yalnızca meta veri görür).
+        Patron yoksa içerik açılmaz. Kapsam: konuşmanın tamamı görünür.
+      responses:
+        '200':
+          description: Mesajlar, kopyalama kapalı
+          headers:
+            Cache-Control:
+              schema: { type: string, example: 'no-store' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+                  has_more: { type: boolean }
+        '403':
+          description: Patron değil ya da hedef artık pending değil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /admin/users:
     post:
       tags: [Admin]
-      summary: Kullanıcı oluştur (sistem yöneticisi). Davet e-postası gönderilir, şifre kullanıcı tarafından belirlenir.
+      summary: Kullanıcı oluştur (sistem yöneticisi). Davet e-postası gönderilir, parola davet ile belirlenir (Ç16).
       requestBody:
         required: true
         content:
@@ -729,7 +882,7 @@ paths:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
     patch:
       tags: [Admin]
-      summary: Kullanıcı güncelle (birim, lokasyon, unvan)
+      summary: Kullanıcı güncelle (ad soyad, unvan, rol, birim ve lokasyon). Birimler user_departments, lokasyonlar user_locations tablosuna yazılır (Ç18). Rol yalnızca employee ya da executive olabilir; system_admin API ile verilmez.
       requestBody:
         required: true
         content:
@@ -737,6 +890,9 @@ paths:
             schema:
               type: object
               properties:
+                role: { type: string, enum: [employee, executive] }
+                first_name: { type: string, maxLength: 80 }
+                last_name: { type: string, maxLength: 80 }
                 job_title: { type: string, maxLength: 120 }
                 department_ids:
                   type: array
@@ -757,7 +913,7 @@ paths:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
     post:
       tags: [Admin]
-      summary: Pasifleştir. Tüm aktif konuşmalardan çıkarılır, oturumları kapanır, sistem mesajı oluşur.
+      summary: Pasifleştir. Tüm aktif konuşmalardan çıkarılır, refresh token aileleri kapanır, sistem mesajı oluşur.
       responses:
         '200':
           description: Pasifleştirildi
@@ -766,12 +922,27 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /admin/users/{userId}/activate:
+    parameters:
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [Admin]
+      summary: Yeniden aktif et. Konuşmalara otomatik eklenmez, yönetici tek tek ekler (Ç19).
+      responses:
+        '200':
+          description: Aktifleştirildi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /admin/users/{userId}/reassign:
     parameters:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
     post:
       tags: [Admin]
-      summary: Pasifleşen kişinin yöneticilik ve açık ticket'larını yeniden ata
+      summary: Pasifleşen birim yöneticisinin birim yöneticiliğini yeniden ata (K5). Ticket atanmaz, açık ticket'lar patron havuzunda kalır.
       requestBody:
         required: true
         content:
@@ -784,12 +955,192 @@ paths:
                 department_ids:
                   type: array
                   items: { type: integer }
-                ticket_ids:
-                  type: array
-                  items: { type: string, format: uuid }
       responses:
         '200': { description: Yeniden atandı }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/companies:
+    post:
+      tags: [Admin]
+      summary: Şirket oluştur (Ç18)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 120 }
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/companies/{companyId}:
+    parameters:
+      - { name: companyId, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Admin]
+      summary: Şirket güncelle (Ç18)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 120 }
+                is_active: { type: boolean }
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin]
+      summary: Şirketi sil (yumuşak silme, deleted_at)
+      responses:
+        '204': { description: Silindi }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/departments:
+    post:
+      tags: [Admin]
+      summary: Birim oluştur (Ç18)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [company_id, name]
+              properties:
+                company_id: { type: integer }
+                name: { type: string, maxLength: 120 }
+                description: { type: string, maxLength: 500 }
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Department' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/departments/{departmentId}:
+    parameters:
+      - { name: departmentId, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Admin]
+      summary: Birim güncelle (Ç18)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 120 }
+                description: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Department' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin]
+      summary: Birimi sil (yumuşak silme, deleted_at). Birim kanalı varsa kapatılır.
+      responses:
+        '204': { description: Silindi }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/departments/{departmentId}/channel:
+    parameters:
+      - { name: departmentId, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Admin]
+      summary: Birim kanalını aç (Ç9, sistem yöneticisi). Birim başına bir aktif kanal.
+      responses:
+        '201':
+          description: Kanal açıldı
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Bu birimin aktif kanalı zaten var
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/locations:
+    post:
+      tags: [Admin]
+      summary: Lokasyon oluştur (Ç18)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 120 }
+                city: { type: string, maxLength: 120, nullable: true }
+                address: { type: string, maxLength: 300, nullable: true }
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Location' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/locations/{locationId}:
+    parameters:
+      - { name: locationId, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Admin]
+      summary: Lokasyon güncelle (Ç18)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 120 }
+                city: { type: string, maxLength: 120, nullable: true }
+                address: { type: string, maxLength: 300, nullable: true }
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Location' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin]
+      summary: Lokasyonu sil (yumuşak silme, deleted_at)
+      responses:
+        '204': { description: Silindi }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /admin/departments/{departmentId}/managers:
     parameters:
@@ -823,16 +1174,23 @@ paths:
     post:
       tags: [Admin]
       summary: Şirketler arası bağlantı aç. Önce önizleme için dry_run kullanılabilir.
+      description: |
+        company_ids iki farklı şirket içerir, sıra serbesttir. Sunucu sıralar ve yanıt company_low_id ile company_high_id döner (Ç1).
+        Aynı çift için aktif bağlantı varsa 409 döner. Kapatılmış bağlantı yeniden açılırsa yeni kayıt oluşur (B6).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [company_a_id, company_b_id]
+              required: [company_ids]
               properties:
-                company_a_id: { type: integer }
-                company_b_id: { type: integer }
+                company_ids:
+                  type: array
+                  minItems: 2
+                  maxItems: 2
+                  uniqueItems: true
+                  items: { type: integer }
                 dry_run: { type: boolean, default: false, description: true ise yalnızca etkilenecek kullanıcıları döner }
       responses:
         '200':
@@ -866,6 +1224,207 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/CompanyLink' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/approval-rules:
+    get:
+      tags: [Admin]
+      summary: Onay ve hız sınırı yapılandırması (B3, tek satır)
+      responses:
+        '200':
+          description: Yapılandırma
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRules' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Admin]
+      summary: Yapılandırmayı güncelle. Değişiklik audit_log'a yazılır (B3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request_expiry_hours: { type: integer, minimum: 1, maximum: 720 }
+                access_window_hours: { type: integer, minimum: 1, maximum: 168 }
+                message_rate_per_min: { type: integer, minimum: 1, maximum: 600 }
+                ticket_rate_per_hour: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Güncellendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRules' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '400':
+          description: Değer aralık dışında (VALIDATION_FAILED)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /conversations/{conversationId}/attachments:
+    parameters:
+      - { $ref: '#/components/parameters/ConversationId' }
+    post:
+      tags: [Messages]
+      summary: "Dosya yükle (Faz 2). Ham gövde, Content-Type dosyanın türüdür. X-File-Name başlığı URI kodlu dosya adıdır. En fazla 10 MB. İzinli türler: png, jpeg, gif, webp, pdf, text/plain."
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/gif: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+          application/pdf: { schema: { type: string, format: binary } }
+          text/plain: { schema: { type: string, format: binary } }
+      responses:
+        '201':
+          description: Yüklendi. Ek henüz bir mesaja bağlı değildir.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttachmentMeta' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attachments/{attachmentId}/url:
+    parameters:
+      - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Messages]
+      summary: İmzalı indirme bağlantısı (Faz 2). Yalnızca konuşmanın aktif üyesi alır. Bağlantı 5 dakika geçerlidir.
+      responses:
+        '200':
+          description: Bağlantı
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, description: Göreli yol. Oturum belirteci gerekmez. }
+                  expires_at: { type: string, format: date-time }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /attachments/{attachmentId}/download:
+    parameters:
+      - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: exp, in: query, required: true, schema: { type: integer, format: int64 } }
+      - { name: sig, in: query, required: true, schema: { type: string } }
+    get:
+      tags: [Messages]
+      summary: İmzalı dosya indirme (Faz 2). Oturum belirteci gerekmez; imza ve süre doğrulanır. Yanıt Cache-Control private, no-store ve nosniff ile gelir.
+      security: []
+      responses:
+        '200':
+          description: Dosya içeriği
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '403':
+          description: İmza geçersiz ya da bağlantının süresi doldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tickets/{ticketId}/comments:
+    parameters:
+      - { $ref: '#/components/parameters/TicketId' }
+    get:
+      tags: [Tickets]
+      summary: "Ticket yorumları (Faz 2). Görünürlük gövdeyle aynıdır: talep eden ve patron."
+      responses:
+        '200':
+          description: Yorumlar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TicketComment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Tickets]
+      summary: Ticket yorumu ekle (Faz 2). 1-2000 karakter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '201':
+          description: Eklendi
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketComment' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/audit-log:
+    get:
+      tags: [Admin]
+      summary: Denetim kaydı (Faz 2). Yalnızca sistem yöneticisi. Kayıtlar değiştirilemez, en yeni önce. Parola, mesaj içeriği ve ticket gövdesi kayda girmez.
+      parameters:
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200':
+          description: Denetim kayıtları
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEntry' }
+                  next_cursor: { type: string, nullable: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /ws:
+    get:
+      tags: [Conversations]
+      summary: "Gerçek zamanlı kanal (WebSocket). Erişim belirteci sorgu parametresinde gelir: /ws?access_token=... Kimliksiz bağlantı 4401 koduyla kapanır. Sunucu olayları (yalnızca kimlik bilgisi, içerik yok): hello, conversation.changed, membership.changed (konuşmadan çıkarıldınız, liste tam yenilenir), mention (sizi andılar). İstemci değişikliği delta uçlarından çeker; bağlıyken yoklama 30 sn'ye iner."
+      parameters:
+        - { name: access_token, in: query, required: true, schema: { type: string } }
+      responses:
+        '101': { description: Switching Protocols }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/push-tokens:
+    post:
+      tags: [Users]
+      summary: "Push cihaz belirteci kaydı (Expo Push). Bir belirteç yalnızca bir kullanıcıya bağlıdır; yeni kayıt eskisini devralır. Bildirim içeriği gönderilmez."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token: { type: string, minLength: 10, maxLength: 512 }
+                platform: { type: string, enum: [ios, android, desktop] }
+      responses:
+        '204': { description: Kaydedildi }
+        '400': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [Users]
+      summary: Push cihaz belirtecini sil (çıkışta)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, minLength: 10, maxLength: 512 }
+      responses:
+        '204': { description: Silindi }
 
 components:
   securitySchemes:
@@ -903,7 +1462,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     NotFound:
-      description: Bulunamadı
+      description: Bulunamadı (üye olmayan kullanıcıya da bu döner, K6)
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -912,8 +1471,53 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    Validation:
+      description: İstek doğrulanamadı (VALIDATION_FAILED)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Hız sınırı aşıldı (K7). Retry-After saniye cinsinden döner.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    ErrorCode:
+      type: string
+      description: Kapalı katalog (K6). packages/core ERROR_CODES ile aynıdır.
+      enum:
+        - VALIDATION_FAILED
+        - UNAUTHENTICATED
+        - TOKEN_EXPIRED
+        - REFRESH_TOKEN_REUSED
+        - INVITATION_INVALID
+        - FORBIDDEN
+        - FORBIDDEN_NOT_MEMBER
+        - ACCOUNT_INACTIVE
+        - TARGET_INACTIVE
+        - NO_COMPANY_LINK
+        - COMPANY_LINK_REVOKED
+        - SELF_DECISION_FORBIDDEN
+        - CONTENT_NOT_VISIBLE
+        - NOT_FOUND
+        - CONTEXT_CHOICE_REQUIRED
+        - CONTEXT_LOCKED
+        - ALREADY_MEMBER
+        - EDIT_WINDOW_CLOSED
+        - MESSAGE_DELETED
+        - REQUEST_NOT_PENDING
+        - DEPARTMENT_CHANNEL_EXISTS
+        - ACCESS_WINDOW_EXPIRED
+        - TARGET_NOT_IN_CONVERSATION
+        - REASON_TOO_SHORT
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+        - CONFLICT
+
     Error:
       type: object
       required: [error]
@@ -923,8 +1527,7 @@ components:
           required: [code, message]
           properties:
             code:
-              type: string
-              example: FORBIDDEN_NOT_MEMBER
+              $ref: '#/components/schemas/ErrorCode'
             message:
               type: string
               example: Bu konuşmanın üyesi değilsiniz.
@@ -935,7 +1538,7 @@ components:
       properties:
         access_token: { type: string }
         refresh_token: { type: string }
-        expires_in: { type: integer, description: Saniye cinsinden }
+        expires_in: { type: integer, description: Saniye cinsinden (access token için 900, B4) }
 
     User:
       type: object
@@ -945,7 +1548,7 @@ components:
         last_name: { type: string }
         email: { type: string, format: email }
         job_title: { type: string, nullable: true }
-        role: { type: string, enum: [employee, system_admin] }
+        role: { type: string, enum: [employee, system_admin, executive] }
         department_ids:
           type: array
           items: { type: integer }
@@ -970,6 +1573,7 @@ components:
       properties:
         company_id: { type: integer }
         name: { type: string }
+        is_active: { type: boolean }
 
     Department:
       type: object
@@ -984,8 +1588,50 @@ components:
       properties:
         location_id: { type: integer }
         name: { type: string }
-        city: { type: string }
-        address: { type: string }
+        city: { type: string, nullable: true, description: Nullable (B15) }
+        address: { type: string, nullable: true, description: Nullable (B15) }
+
+    AttachmentMeta:
+      type: object
+      properties:
+        attachment_id: { type: string, format: uuid }
+        file_name: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+
+    TicketComment:
+      type: object
+      properties:
+        comment_id: { type: integer, format: int64 }
+        author: { $ref: '#/components/schemas/UserSummary' }
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+
+    AuditEntry:
+      type: object
+      properties:
+        audit_id: { type: integer, format: int64 }
+        actor: { $ref: '#/components/schemas/UserSummary' }
+        entity_type:
+          type: string
+          enum: [user, department, company, location, company_link, department_manager, approval_rules]
+        entity_id: { type: string }
+        action:
+          type: string
+          enum: [create, update, deactivate, activate, delete, revoke, assign, unassign]
+        before: { type: object, nullable: true }
+        after: { type: object, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    ApprovalRules:
+      type: object
+      description: Tek satır yapılandırma (B3)
+      properties:
+        request_expiry_hours: { type: integer, minimum: 1, maximum: 720, example: 72 }
+        access_window_hours: { type: integer, minimum: 1, maximum: 168, example: 24 }
+        message_rate_per_min: { type: integer, minimum: 1, maximum: 600, example: 60 }
+        ticket_rate_per_hour: { type: integer, minimum: 1, maximum: 200, example: 20 }
+        updated_at: { type: string, format: date-time }
 
     ConversationSummary:
       type: object
@@ -996,6 +1642,7 @@ components:
         last_message_at: { type: string, format: date-time, nullable: true }
         unread_count: { type: integer }
         is_muted: { type: boolean }
+        updated_at: { type: string, format: date-time, description: Delta için (K4) }
 
     Conversation:
       allOf:
@@ -1012,12 +1659,11 @@ components:
                   user: { $ref: '#/components/schemas/UserSummary' }
                   joined_at: { type: string, format: date-time }
                   left_at: { type: string, format: date-time, nullable: true }
-                  last_read_at: { type: string, format: date-time, nullable: true }
-            read_summary:
-              type: object
-              description: Birebirde karşı taraf okudu mu, grupta kaç kişi okudu
-              properties:
-                read_by_count: { type: integer }
+                  last_read_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                    description: Grupta yalnızca isteği yapanın kendi kaydında dolu, diğerleri null (K1). Birebirde karşı taraf için read_by_peer kullanılır (K2).
 
     ContextChoiceRequired:
       type: object
@@ -1038,9 +1684,14 @@ components:
       properties:
         message_id: { type: string, format: uuid }
         conversation_id: { type: string, format: uuid }
-        sender: { $ref: '#/components/schemas/UserSummary' }
+        sender:
+          allOf:
+            - $ref: '#/components/schemas/UserSummary'
+          nullable: true
+          description: Sistem mesajında null (B12)
         client_message_id: { type: string, format: uuid }
         seq: { type: integer, format: int64 }
+        change_seq: { type: integer, format: int64, description: Gönderim, düzenleme ve silmede artar (K4) }
         content:
           type: string
           nullable: true
@@ -1050,6 +1701,23 @@ components:
         edited_at: { type: string, format: date-time, nullable: true }
         deleted: { type: boolean }
         edit_window_closes_at: { type: string, format: date-time, nullable: true, description: Yalnızca gönderene döner }
+        read_count:
+          type: integer
+          nullable: true
+          description: Grupta, yalnızca gönderenin kendi mesajlarında dolu (K2). mesajın gönderilmesinden sonra last_read_at değeri daha büyük olan üye sayısı.
+        read_by_peer:
+          type: boolean
+          nullable: true
+          description: Birebirde, yalnızca gönderenin kendi mesajlarında dolu (K2). Karşı taraf okuduysa true.
+        mentions:
+          type: array
+          items: { type: string, format: uuid }
+          description: Mesajda anılan kullanıcılar
+        attachment:
+          allOf:
+            - $ref: '#/components/schemas/AttachmentMeta'
+          nullable: true
+          description: Faz 2. Mesaja bağlı dosya eki.
 
     Ticket:
       allOf:
@@ -1059,7 +1727,7 @@ components:
             body:
               type: string
               nullable: true
-              description: Yalnızca birim yöneticisine döner, sistem yöneticisine null
+              description: Talep eden ve patrona döner, diğerlerine null (Ç11)
             edit_window_closes_at: { type: string, format: date-time, nullable: true }
             decisions:
               type: array
@@ -1070,9 +1738,10 @@ components:
       properties:
         ticket_id: { type: string, format: uuid }
         requester: { $ref: '#/components/schemas/UserSummary' }
-        target_department_id: { type: integer }
+        target_department_id: { type: integer, description: Bilgi amaçlı, karar yetkisi birime bağlı değil (K5) }
         title: { type: string }
         status: { type: string, enum: [pending, approved, rejected, withdrawn, expired] }
+        reopened_from: { type: string, format: uuid, nullable: true, description: Yeniden açılmışsa önceki ticket (Ç14) }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
         closed_at: { type: string, format: date-time, nullable: true }
@@ -1104,16 +1773,27 @@ components:
         conversation_name: { type: string, nullable: true }
         requester: { $ref: '#/components/schemas/UserSummary' }
         status: { type: string, enum: [pending, approved, rejected, withdrawn, expired] }
+        reopened_from: { type: string, format: uuid, nullable: true, description: Yeniden açılmışsa önceki talep (Ç14) }
         created_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
         meta:
           type: object
-          description: Onaylayanın gördüğü meta veri
+          description: Onaylayanın gördüğü meta veri (Ç6)
           properties:
+            conversation_type: { type: string, enum: [direct, group, department] }
+            conversation_name: { type: string, nullable: true }
+            requester_department_ids:
+              type: array
+              items: { type: integer }
+              description: Talep edenin birimleri
             member_count: { type: integer }
             message_count: { type: integer }
             first_message_at: { type: string, format: date-time, nullable: true }
             last_message_at: { type: string, format: date-time, nullable: true }
+            reason: { type: string }
+            target_department_ids:
+              type: array
+              items: { type: integer }
 
     AccessRequestTarget:
       type: object
@@ -1121,15 +1801,19 @@ components:
         department_id: { type: integer }
         status: { type: string, enum: [pending, approved, rejected, expired] }
         decided_by: { $ref: '#/components/schemas/UserSummary' }
-        decision_basis: { type: string, enum: [content, meta], description: Birim yöneticisi içerikle, sistem yöneticisi meta veriyle karar verir }
+        decision_basis:
+          type: string
+          nullable: true
+          enum: [content, meta]
+          description: content = patron içerikle karar verdi. meta = patron yokken sistem yöneticisi meta veriyle karar verdi. Karar verilmeden önce null (Ç21).
         decided_at: { type: string, format: date-time, nullable: true }
 
     CompanyLink:
       type: object
       properties:
         link_id: { type: integer }
-        company_a_id: { type: integer }
-        company_b_id: { type: integer }
+        company_low_id: { type: integer, description: Küçük şirket kimliği (Ç1) }
+        company_high_id: { type: integer, description: Büyük şirket kimliği (Ç1) }
         created_by: { $ref: '#/components/schemas/UserSummary' }
         created_at: { type: string, format: date-time }
         revoked_at: { type: string, format: date-time, nullable: true }

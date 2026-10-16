@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791938217765,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791938218697,
+      "tag": "0001_immutable_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792053454585,
+      "tag": "0002_k3_k4_change_seq",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792056105699,
+      "tag": "0003_patron_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792057862723,
+      "tag": "0004_k5_single_ticket_decision",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792059935824,
+      "tag": "0005_ticket_decisions_immutable",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792061025104,
+      "tag": "0006_decisions_v07_full",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792061051164,
+      "tag": "0007_audit_immutable_and_rules_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792066486045,
+      "tag": "0008_faz2_attachments_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792071351920,
+      "tag": "0009_mentions_push_tokens",
+      "breakpoints": true
+    }
+  ]
+}

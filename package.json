@@ -1,0 +1,19 @@
+{
+  "name": "beyaz-ofis-iletisim",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @beyaz-ofis/db-schema run generate",
+    "db:migrate": "pnpm --filter @beyaz-ofis/db-schema run migrate"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
+  }
+}
