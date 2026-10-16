@@ -12,6 +12,7 @@
     ],
     "android": {
       "package": "com.beyazofis.mobile"
-    }
+    },
+    "plugins": ["./plugins/withMonorepoBundle"]
   }
 }
