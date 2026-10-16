@@ -1,5 +1,5 @@
 # Android (native): gerçek zamanlı anma. Uygulama açıkken başka bir kullanıcı anarsa banner görünür,
-# banner'a dokunmak anılan konuşmayı açar. Anmayı tetikleyen adım dışarıdan yapılır (bkz. scripts/trigger-mention.mjs).
+# banner'a dokunmak anılan konuşmayı açar. Anmayı tetikleyen adım dışarıdan yapılır (bkz. e2e/trigger-mention.mjs).
 appId: com.beyazofis.mobile
 ---
 - launchApp:

@@ -1,5 +1,5 @@
 # Android (native) uçtan uca: giriş, grup sohbeti, @ anma önerisi ve gönderimi, iş ekranında ticket ve talep.
-# Ön koşul: API 3000'de (emülatörde 10.0.2.2:3000), Metro 8081'de (adb reverse), uygulama kurulu.
+# Ön koşul: API 3000'de, adb reverse tcp:3000 tcp:3000 (gerçek cihazda localhost), uygulama kurulu (release APK; Metro gerekmez).
 # Not: Maestro metin girişinde yalnızca ASCII güvenilir; türkçe karakterli veriler uygulamanın kendi
 #      seçimleriyle (öneri, birim çipi) girilir. Beklenen metinler regex olarak eşleşir (tam eşleşme).
 appId: com.beyazofis.mobile
